@@ -1,5 +1,5 @@
 /**
- * PDF 캡처 — html2canvas + jsPDF (A4 export page 1개 = PDF 1페이지)
+ * PDF 캡처 — html2canvas + jsPDF (답안지 DOM 1개 = PDF 1페이지)
  */
 
 export const EXPORT_PAGE_WIDTH_PX = 794;
@@ -7,7 +7,7 @@ export const EXPORT_PAGE_HEIGHT_PX = 1123;
 export const PDF_PAGE_WIDTH_MM = 210;
 export const PDF_PAGE_HEIGHT_MM = 297;
 
-export const CAPTURE_SCALE = 2;
+const CAPTURE_SCALE = 2;
 
 function loadScriptOnce(src, globalCheck) {
   if (globalCheck()) return Promise.resolve();
@@ -47,82 +47,44 @@ export function getJsPdfConstructor() {
   return ctor;
 }
 
-function measureCaptureDom(pageNode) {
-  const css = getComputedStyle(pageNode);
-  const rect = pageNode.getBoundingClientRect();
-  return {
-    offsetWidth: pageNode.offsetWidth,
-    offsetHeight: pageNode.offsetHeight,
-    clientWidth: pageNode.clientWidth,
-    clientHeight: pageNode.clientHeight,
-    rectWidth: rect.width,
-    rectHeight: rect.height,
-    transform: css.transform,
-    zoom: css.zoom || "1",
-  };
-}
-
-function measureCanvas(canvas) {
-  return {
-    canvasWidth: canvas.width,
-    canvasHeight: canvas.height,
-    canvasCssWidth: canvas.style.width || "(none)",
-    canvasCssHeight: canvas.style.height || "(none)",
-    html2canvasScale: CAPTURE_SCALE,
-    devicePixelRatio: window.devicePixelRatio,
-    expectedWidth: EXPORT_PAGE_WIDTH_PX * CAPTURE_SCALE,
-    expectedHeight: EXPORT_PAGE_HEIGHT_PX * CAPTURE_SCALE,
-  };
-}
-
-export function logPdfExportMetrics({
-  pageIndex,
-  dom,
-  canvas,
-  addImage,
-  ratios,
-}) {
-  console.group(`[answer-export] PDF metrics page ${pageIndex + 1}`);
-  console.log("A. capture DOM");
-  console.table([dom]);
-  console.log("B. canvas");
-  console.table([canvas]);
-  console.log("C. jsPDF addImage");
-  console.table([addImage]);
-  console.log("D. aspect ratios");
-  console.table([ratios]);
-  console.groupEnd();
-}
-
 export function normalizeExportPageNode(pageNode, { log = false } = {}) {
-  if (!pageNode) return { node: pageNode, metrics: null };
+  if (!pageNode) return pageNode;
 
   Object.assign(pageNode.style, {
     width: `${EXPORT_PAGE_WIDTH_PX}px`,
     height: `${EXPORT_PAGE_HEIGHT_PX}px`,
-    minWidth: `${EXPORT_PAGE_WIDTH_PX}px`,
-    minHeight: `${EXPORT_PAGE_HEIGHT_PX}px`,
-    maxWidth: `${EXPORT_PAGE_WIDTH_PX}px`,
-    maxHeight: `${EXPORT_PAGE_HEIGHT_PX}px`,
     boxSizing: "border-box",
     overflow: "hidden",
     margin: "0",
     padding: "0",
     position: "relative",
     background: "#ffffff",
-    transform: "none",
-    zoom: "1",
-    transformOrigin: "initial",
   });
 
-  const metrics = measureCaptureDom(pageNode);
+  const metrics = {
+    rectHeight: pageNode.getBoundingClientRect().height,
+    scrollHeight: pageNode.scrollHeight,
+    offsetHeight: pageNode.offsetHeight,
+  };
+
   if (log) {
-    console.log("[answer-export] normalized export page:", metrics);
+    console.log("[answer-export] page node metrics:", metrics);
   }
+
   return { node: pageNode, metrics };
 }
 
-export async function captureExportPageToCanvas(pageNode, doc = document) {
+export function fitCanvasToA4Mm(canvas) {
+  void canvas;
+  return {
+    renderWidthMm: PDF_PAGE_WIDTH_MM,
+    renderHeightMm: PDF_PAGE_HEIGHT_MM,
+    x: 0,
+    y: 0,
+  };
+}
+
+export async function capturePageNodeToCanvas(pageNode, doc = document) {
   const html2canvas = window.html2canvas;
   if (!html2canvas) throw new Error("html2canvas를 불러오지 못했습니다.");
 
@@ -141,12 +103,10 @@ export async function captureExportPageToCanvas(pageNode, doc = document) {
     height: EXPORT_PAGE_HEIGHT_PX,
     windowWidth: EXPORT_PAGE_WIDTH_PX,
     windowHeight: EXPORT_PAGE_HEIGHT_PX,
-    scrollX: 0,
-    scrollY: 0,
   });
 }
 
-export async function buildPdfFromExportPages(pageNodes, { log = false } = {}) {
+export async function buildPdfFromPageNodes(pageNodes, { log = false } = {}) {
   const jsPDF = getJsPdfConstructor();
   const pdf = new jsPDF({
     orientation: "portrait",
@@ -155,88 +115,42 @@ export async function buildPdfFromExportPages(pageNodes, { log = false } = {}) {
   });
 
   for (let i = 0; i < pageNodes.length; i++) {
-    const { node, metrics: domMetrics } = normalizeExportPageNode(pageNodes[i], { log });
-    const canvas = await captureExportPageToCanvas(node, node.ownerDocument);
-    const canvasMetrics = measureCanvas(canvas);
-
-    const addImage = {
-      pdfPageWidthMm: PDF_PAGE_WIDTH_MM,
-      pdfPageHeightMm: PDF_PAGE_HEIGHT_MM,
-      x: 0,
-      y: 0,
-      width: PDF_PAGE_WIDTH_MM,
-      height: PDF_PAGE_HEIGHT_MM,
-      scaleRatio: 1,
-      margin: 0,
-    };
-
-    const ratios = {
-      domAspect: domMetrics.rectWidth / domMetrics.rectHeight,
-      canvasAspect: canvas.width / canvas.height,
-      addImageAspect: addImage.width / addImage.height,
-      a4Aspect: PDF_PAGE_WIDTH_MM / PDF_PAGE_HEIGHT_MM,
-    };
+    const { node } = normalizeExportPageNode(pageNodes[i], { log });
+    const canvas = await capturePageNodeToCanvas(node, node.ownerDocument);
 
     if (log) {
-      logPdfExportMetrics({
-        pageIndex: i,
-        dom: domMetrics,
-        canvas: canvasMetrics,
-        addImage,
-        ratios,
+      console.log("[answer-export] canvas size:", {
+        index: i,
+        width: canvas.width,
+        height: canvas.height,
+        a4PixelHeightAtScale: Math.floor(
+          EXPORT_PAGE_WIDTH_PX * (PDF_PAGE_HEIGHT_MM / PDF_PAGE_WIDTH_MM) * CAPTURE_SCALE
+        ),
       });
     }
 
-    const imgData = canvas.toDataURL("image/png");
+    const imgData = canvas.toDataURL("image/jpeg", 0.98);
+    const { renderWidthMm, renderHeightMm, x, y } = fitCanvasToA4Mm(canvas);
 
     if (i > 0) {
       pdf.addPage("a4", "portrait");
     }
 
-    pdf.addImage(
-      imgData,
-      "PNG",
-      addImage.x,
-      addImage.y,
-      addImage.width,
-      addImage.height
-    );
+    pdf.addImage(imgData, "JPEG", x, y, renderWidthMm, renderHeightMm);
   }
 
-  const pageCount = pageNodes.length;
+  const pageNodesCount = pageNodes.length;
   const pdfPageCount = pdf.internal.getNumberOfPages();
 
   if (log) {
-    console.log("[answer-export] page count:", { pageCount, pdfPageCount });
+    console.log({ pageNodesCount, pdfPageCount });
   }
 
-  if (pageCount !== pdfPageCount) {
+  if (pageNodesCount !== pdfPageCount) {
     throw new Error(
-      `PDF 페이지 수 불일치: DOM ${pageCount}장, PDF ${pdfPageCount}장`
+      `PDF 페이지 수 불일치: DOM ${pageNodesCount}장, PDF ${pdfPageCount}장`
     );
   }
 
   return pdf;
 }
-
-/** @deprecated use buildPdfFromExportPages */
-export async function buildPdfFromSheetNodes(pageNodes, options) {
-  return buildPdfFromExportPages(pageNodes, options);
-}
-
-/** @deprecated use buildPdfFromExportPages */
-export async function buildPdfFromPageNodes(pageNodes, options) {
-  return buildPdfFromExportPages(pageNodes, options);
-}
-
-/** @deprecated */
-export async function captureSheetNodeToCanvas(node, doc) {
-  return captureExportPageToCanvas(node, doc);
-}
-
-/** @deprecated */
-export async function capturePageNodeToCanvas(node, doc) {
-  return captureExportPageToCanvas(node, doc);
-}
-
-export { CAPTURE_SCALE as PDF_CAPTURE_SCALE };

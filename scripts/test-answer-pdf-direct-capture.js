@@ -99,41 +99,40 @@ async function probePdfExport(page) {
 
     await captureMod.ensurePdfCaptureLibs();
     const t = typoMod.normalizeAnswerTypography(state.answerTypography);
-    const liveSheet = document.querySelector(".answer-doc-sheet");
-    const liveEditor = document.querySelector(".answer-doc-editor");
+    const html = exportMod.buildExportHtmlFromClones(audit.pagesToExport, state.docTitle, t);
 
-    const mount = document.createElement("div");
-    mount.style.cssText =
-      "position:fixed;left:-10000px;top:0;visibility:hidden;pointer-events:none;background:#fff;transform:none;zoom:1;";
-    document.body.appendChild(mount);
-
-    const pages = audit.pagesToExport.map((clone) => {
-      const pageEl = document.createElement("div");
-      pageEl.className = "export-answer-page";
-      const sheet = clone.cloneNode(true);
-      pageEl.appendChild(sheet);
-      mount.appendChild(pageEl);
-      if (liveSheet) {
-        typoMod.applyA4ExportCaptureLayout(pageEl, sheet, t, liveSheet, liveEditor);
-      }
-      return pageEl;
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText =
+      "position:fixed;left:0;top:0;width:794px;height:1123px;border:none;opacity:0.01;pointer-events:none;z-index:-1;";
+    document.body.appendChild(iframe);
+    const idoc = iframe.contentDocument;
+    idoc.open();
+    idoc.write(html);
+    idoc.close();
+    typoMod.applyAnswerSheetVars(idoc.body, t);
+    idoc.querySelectorAll(
+      ".export-answer-page, .export-answer-page-inner, .answer-doc-sheet, .answer-sheet-page, .answer-doc-editor"
+    ).forEach((el) => {
+      typoMod.applyAnswerSheetVars(el, t);
     });
-    await typoMod.waitForExportLayout(document);
+    await typoMod.waitForExportLayout(idoc);
 
-    const metrics = pages.map((n, index) => ({
-      index,
-      rectHeight: n.getBoundingClientRect().height,
-      scrollHeight: n.scrollHeight,
-      offsetHeight: n.offsetHeight,
-      offsetWidth: n.offsetWidth,
-    }));
+    const pageNodes = [...idoc.querySelectorAll(".export-answer-page")];
+    const metrics = pageNodes.map((n, index) => {
+      captureMod.normalizeExportPageNode(n);
+      return {
+        index,
+        rectHeight: n.getBoundingClientRect().height,
+        scrollHeight: n.scrollHeight,
+        offsetHeight: n.offsetHeight,
+      };
+    });
 
-    const firstPage = pages[0];
-    const firstCanvas = firstPage
-      ? await captureMod.captureExportPageToCanvas(firstPage, document)
+    const firstCanvas = pageNodes.length
+      ? await captureMod.capturePageNodeToCanvas(pageNodes[0], idoc)
       : null;
 
-    const exportEditor = firstPage?.querySelector(".answer-doc-editor");
+    const exportEditor = idoc.querySelector(".answer-doc-editor");
     const exportStyle = exportEditor
       ? {
           fontSize: getComputedStyle(exportEditor).fontSize,
@@ -141,19 +140,18 @@ async function probePdfExport(page) {
         }
       : null;
 
-    const pdf = await captureMod.buildPdfFromExportPages(pages, { log: false });
+    const pdf = await captureMod.buildPdfFromPageNodes(pageNodes, { log: true });
     const pdfPageCount = pdf.internal.getNumberOfPages();
-    mount.remove();
+    document.body.removeChild(iframe);
 
     return {
       audit,
-      pageNodesCount: pages.length,
+      pageNodesCount: pageNodes.length,
       pdfPageCount,
       metrics,
       canvasWidth: firstCanvas?.width ?? 0,
       canvasHeight: firstCanvas?.height ?? 0,
-      expectedCanvasWidth: 794 * 2,
-      expectedCanvasHeight: 1123 * 2,
+      a4CanvasHeightAtScale2: 1123 * 2,
       exportStyle,
       typography: t,
     };
@@ -242,7 +240,7 @@ async function main() {
       results,
       "D: 16px / 0.5px → PDF 1페이지 (자동 분할 없음)",
       lastProbe.pdfPageCount === 1 && typoD,
-      `pdf=${lastProbe.pdfPageCount} canvas=${lastProbe.canvasWidth}x${lastProbe.canvasHeight} expected=${lastProbe.expectedCanvasWidth}x${lastProbe.expectedCanvasHeight}`
+      `pdf=${lastProbe.pdfPageCount} canvasH=${lastProbe.canvasHeight} a4H=${lastProbe.a4CanvasHeightAtScale2}`
     );
 
     await page.evaluate(async () => {
@@ -272,8 +270,9 @@ async function main() {
     );
 
     console.log("\n=== Diagnostics ===");
-    console.log("canvas:", `${lastProbe?.canvasWidth}x${lastProbe?.canvasHeight}`);
-    console.log("expected canvas at scale 2:", `${lastProbe?.expectedCanvasWidth}x${lastProbe?.expectedCanvasHeight}`);
+    console.log("canvas height (scale 2):", lastProbe?.canvasHeight);
+    console.log("A4 page height px:", 1123);
+    console.log("A4 canvas height at scale 2:", lastProbe?.a4CanvasHeightAtScale2);
     console.log("page metrics sample:", JSON.stringify(lastProbe?.metrics?.[0], null, 2));
 
     const failed = results.filter((r) => !r.ok).length;

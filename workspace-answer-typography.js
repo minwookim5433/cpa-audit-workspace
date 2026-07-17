@@ -15,8 +15,6 @@ export const ANSWER_PAGE_WIDTH_PX = 560;
 export const ANSWER_PADDING_LEFT_PX = 10;
 export const ANSWER_PADDING_RIGHT_PX = 10;
 export const ANSWER_LINE_HEIGHT_PX = 28;
-export const A4_EXPORT_PAGE_WIDTH_PX = 794;
-export const A4_EXPORT_PAGE_HEIGHT_PX = 1123;
 export const ANSWER_FONT_FAMILY =
   '"Batang", "Nanum Myeongjo", "Noto Serif KR", "Times New Roman", serif';
 
@@ -202,113 +200,6 @@ function fontFamiliesMatch(a, b) {
   return refParts[0] === outParts[0];
 }
 
-export function applyA4ExportCaptureLayout(
-  pageEl,
-  sheetEl,
-  typography = {},
-  referenceSheet = null,
-  referenceEditor = null
-) {
-  if (!pageEl || !sheetEl) return;
-
-  const t = normalizeAnswerTypography(typography);
-
-  applyAnswerSheetVars(pageEl, t);
-  pageEl.style.setProperty("--answer-page-width", `${A4_EXPORT_PAGE_WIDTH_PX}px`);
-  pageEl.style.setProperty(
-    "--answer-content-width",
-    `${A4_EXPORT_PAGE_WIDTH_PX - ANSWER_PADDING_LEFT_PX - ANSWER_PADDING_RIGHT_PX}px`
-  );
-
-  Object.assign(pageEl.style, {
-    width: `${A4_EXPORT_PAGE_WIDTH_PX}px`,
-    height: `${A4_EXPORT_PAGE_HEIGHT_PX}px`,
-    minWidth: `${A4_EXPORT_PAGE_WIDTH_PX}px`,
-    minHeight: `${A4_EXPORT_PAGE_HEIGHT_PX}px`,
-    maxWidth: `${A4_EXPORT_PAGE_WIDTH_PX}px`,
-    maxHeight: `${A4_EXPORT_PAGE_HEIGHT_PX}px`,
-    boxSizing: "border-box",
-    overflow: "hidden",
-    margin: "0",
-    padding: "0",
-    background: "#ffffff",
-    transform: "none",
-    zoom: "1",
-    transformOrigin: "initial",
-    position: "relative",
-  });
-
-  if (referenceSheet) {
-    copyAnswerSheetComputedStyles(referenceSheet, sheetEl);
-  } else {
-    applyAnswerSheetVars(sheetEl, t);
-  }
-
-  applyAnswerSheetVars(sheetEl, t);
-  sheetEl.style.setProperty("--answer-page-width", `${A4_EXPORT_PAGE_WIDTH_PX}px`);
-  sheetEl.style.setProperty(
-    "--answer-content-width",
-    `${A4_EXPORT_PAGE_WIDTH_PX - ANSWER_PADDING_LEFT_PX - ANSWER_PADDING_RIGHT_PX}px`
-  );
-
-  Object.assign(sheetEl.style, {
-    width: `${A4_EXPORT_PAGE_WIDTH_PX}px`,
-    height: `${A4_EXPORT_PAGE_HEIGHT_PX}px`,
-    minWidth: `${A4_EXPORT_PAGE_WIDTH_PX}px`,
-    minHeight: `${A4_EXPORT_PAGE_HEIGHT_PX}px`,
-    maxWidth: `${A4_EXPORT_PAGE_WIDTH_PX}px`,
-    maxHeight: `${A4_EXPORT_PAGE_HEIGHT_PX}px`,
-    margin: "0",
-    boxSizing: "border-box",
-    transform: "none",
-    zoom: "1",
-    transformOrigin: "initial",
-    background: "#ffffff",
-  });
-
-  const bodyEl = sheetEl.querySelector(".answer-doc-body, .answer-sheet-content");
-  if (bodyEl) {
-    applyAnswerBodyExportLayout(bodyEl);
-    bodyEl.style.minHeight = `${A4_EXPORT_PAGE_HEIGHT_PX - (referenceSheet?.querySelector(".answer-doc-header")?.offsetHeight || 28)}px`;
-    bodyEl.style.height = "auto";
-  }
-
-  const editorEl = sheetEl.querySelector(".answer-doc-editor");
-  if (editorEl) {
-    if (referenceEditor) {
-      copyExportStylesFromElement(referenceEditor, editorEl, [
-        "fontFamily",
-        "fontSize",
-        "fontWeight",
-        "letterSpacing",
-        "lineHeight",
-        "textAlign",
-        "paddingTop",
-        "paddingRight",
-        "paddingBottom",
-        "paddingLeft",
-        "whiteSpace",
-        "overflowWrap",
-        "wordBreak",
-        "color",
-        "backgroundColor",
-        "boxSizing",
-      ]);
-    } else {
-      applyAnswerEditorExportStyles(editorEl, t, null);
-    }
-    editorEl.style.width = "100%";
-    editorEl.style.maxWidth = "100%";
-    editorEl.style.minHeight = `${ANSWER_LINE_HEIGHT_PX * 25}px`;
-  }
-
-  const bgLines = sheetEl.querySelectorAll(".answer-doc-bg-line");
-  bgLines.forEach((line) => {
-    line.style.height = `${ANSWER_LINE_HEIGHT_PX}px`;
-    line.style.boxSizing = "border-box";
-  });
-}
-
 export function copyAnswerSheetLayoutFromSource(target, source) {
   if (!target || !source) return;
   const rect = source.getBoundingClientRect();
@@ -330,70 +221,6 @@ export function copyAnswerSheetLayoutFromSource(target, source) {
     const fromSource = css.getPropertyValue(key).trim();
     if (fromSource) target.style.setProperty(key, fromSource);
   });
-}
-
-export function copyAnswerSheetComputedStyles(sourceSheet, targetSheet) {
-  if (!sourceSheet || !targetSheet) return;
-
-  const pairs = [[sourceSheet, targetSheet]];
-  const sourceHeader = sourceSheet.querySelector(".answer-doc-header");
-  const targetHeader = targetSheet.querySelector(".answer-doc-header");
-  if (sourceHeader && targetHeader) pairs.push([sourceHeader, targetHeader]);
-
-  const sourceBody = sourceSheet.querySelector(".answer-doc-body, .answer-sheet-content");
-  const targetBody = targetSheet.querySelector(".answer-doc-body, .answer-sheet-content");
-  if (sourceBody && targetBody) pairs.push([sourceBody, targetBody]);
-
-  const sourceEditor = sourceSheet.querySelector(".answer-doc-editor");
-  const targetEditor = targetSheet.querySelector(".answer-doc-editor");
-  if (sourceEditor && targetEditor) pairs.push([sourceEditor, targetEditor]);
-
-  const sourceBg = sourceSheet.querySelector(".answer-doc-bg, .answer-line-background");
-  const targetBg = targetSheet.querySelector(".answer-doc-bg, .answer-line-background");
-  if (sourceBg && targetBg) pairs.push([sourceBg, targetBg]);
-
-  const sourceLines = [...sourceSheet.querySelectorAll(".answer-doc-bg-line")];
-  const targetLines = [...targetSheet.querySelectorAll(".answer-doc-bg-line")];
-  sourceLines.forEach((line, index) => {
-    if (targetLines[index]) pairs.push([line, targetLines[index]]);
-  });
-
-  pairs.forEach(([source, target]) => copyExportStylesFromElement(source, target));
-
-  const rect = sourceSheet.getBoundingClientRect();
-  Object.assign(targetSheet.style, {
-    width: `${Math.round(rect.width)}px`,
-    maxWidth: `${Math.round(rect.width)}px`,
-    height: `${Math.round(rect.height)}px`,
-    minHeight: `${Math.round(rect.height)}px`,
-    transform: "none",
-    zoom: "1",
-    margin: "0",
-    boxSizing: "border-box",
-  });
-}
-
-export function measureAnswerPageLayout(el, label = "page") {
-  if (!el) return { label, missing: true };
-  const css = getComputedStyle(el);
-  const rect = el.getBoundingClientRect();
-  const lines = [...el.querySelectorAll(".answer-doc-bg-line")];
-  return {
-    label,
-    offsetWidth: el.offsetWidth,
-    offsetHeight: el.offsetHeight,
-    clientWidth: el.clientWidth,
-    clientHeight: el.clientHeight,
-    rectWidth: Math.round(rect.width * 100) / 100,
-    rectHeight: Math.round(rect.height * 100) / 100,
-    fontSize: css.fontSize,
-    letterSpacing: css.letterSpacing,
-    lineHeight: css.lineHeight,
-    transform: css.transform,
-    zoom: css.zoom || "1",
-    rows25Height: lines.reduce((sum, line) => sum + line.getBoundingClientRect().height, 0),
-    firstRowHeight: lines[0]?.getBoundingClientRect().height ?? null,
-  };
 }
 
 export function normalizeLetterSpacingCss(value) {
