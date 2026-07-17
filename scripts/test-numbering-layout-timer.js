@@ -26,19 +26,17 @@ async function setup(page) {
   await sleep(1000);
 }
 
-async function clickNumber(page) {
-  await page.evaluate(() => {
-    document.getElementById("ws-number")?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-  });
-  await page.click("#ws-number");
-  await sleep(300);
+async function typeCircledViaSpace(page, editor, num) {
+  await page.focus(editor);
+  await page.type(editor, `${num}) `, { delay: 15 });
+  await sleep(250);
 }
 
-async function clickFromOne(page) {
-  await page.evaluate(() => {
-    document.getElementById("ws-number-from-one")?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-  });
-  await page.click("#ws-number-from-one");
+async function clickSymbol(page, symbol) {
+  await page.evaluate((sym) => {
+    document.querySelector(`[data-symbol="${sym}"]`)?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  }, symbol);
+  await page.click(`[data-symbol="${symbol}"]`);
   await sleep(300);
 }
 
@@ -72,33 +70,33 @@ async function main() {
     await setup(page);
     const editor = ".answer-doc-editor";
 
-    await clickNumber(page);
+    await typeCircledViaSpace(page, editor, 1);
     const a = await page.$eval(editor, (el) => el.textContent);
-    record(results, "A. [번호] → ①", a.includes("①"), a);
+    record(results, "A. 1) + 스페이스 → ①", a.includes("①"), a);
 
     await typeNewLine(page);
-    await clickNumber(page);
+    await typeCircledViaSpace(page, editor, 2);
     const b = await page.$eval(editor, (el) => el.textContent);
-    record(results, "B. 다음 행 [번호] → ②", /①[\s\S]*②/.test(b), b.replace(/\s+/g, " ").slice(0, 40));
+    record(results, "B. 다음 행 2) + 스페이스 → ②", /①[\s\S]*②/.test(b), b.replace(/\s+/g, " ").slice(0, 40));
 
     await typeNewLine(page);
-    await clickNumber(page);
+    await typeCircledViaSpace(page, editor, 3);
     const c = await page.$eval(editor, (el) => el.textContent);
-    record(results, "C. 다음 행 [번호] → ③", /②[\s\S]*③/.test(c), c.replace(/\s+/g, " ").slice(0, 50));
+    record(results, "C. 다음 행 3) + 스페이스 → ③", /②[\s\S]*③/.test(c), c.replace(/\s+/g, " ").slice(0, 50));
 
     await typeNewLine(page);
-    await clickFromOne(page);
+    await typeCircledViaSpace(page, editor, 1);
     await typeNewLine(page);
-    await clickNumber(page);
+    await typeCircledViaSpace(page, editor, 2);
     const d = await page.$eval(editor, (el) => el.textContent);
     const dOk = (d.match(/①/g) || []).length >= 2 && /①[\s\S]*①[\s\S]*②/.test(d);
-    record(results, "D. [①부터] 후 [번호] → ②", dOk, d.replace(/\s+/g, " ").slice(0, 60));
+    record(results, "D. 새 줄 1) + 2) → ① ②", dOk, d.replace(/\s+/g, " ").slice(0, 60));
 
     await page.click("#ws-undo");
     await sleep(400);
-    await clickNumber(page);
+    await typeCircledViaSpace(page, editor, 3);
     const e = await page.$eval(editor, (el) => el.textContent);
-    record(results, "E. Undo 후 [번호] → ③", e.includes("③"), e.replace(/\s+/g, " ").slice(0, 60));
+    record(results, "E. Undo 후 3) + 스페이스 → ③", e.includes("③"), e.replace(/\s+/g, " ").slice(0, 60));
 
     await page.evaluate(() => {
       const ed = document.querySelector(".answer-doc-editor");
@@ -112,9 +110,7 @@ async function main() {
       sel.removeAllRanges();
       sel.addRange(range);
     });
-    await page.evaluate(() => document.getElementById("ws-number")?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
-    await page.click("#ws-number");
-    await sleep(300);
+    await clickSymbol(page, "①");
     const f = await page.evaluate(() => {
       const ed = document.querySelector(".answer-doc-editor");
       const text = ed.textContent;
@@ -122,7 +118,7 @@ async function main() {
       const idxFront = text.indexOf("앞");
       return { text, ok: idxCircled > idxFront && idxCircled < 10 };
     });
-    record(results, "F. caret 위치 삽입", f.ok, f.text);
+    record(results, "F. caret 위치 기호 삽입", f.ok, f.text);
 
     await page.evaluate(() => {
       const ed = document.querySelector(".answer-doc-editor");
@@ -135,11 +131,44 @@ async function main() {
       window.getSelection().addRange(range);
       document.execCommand("insertLineBreak");
     });
-    await page.evaluate(() => document.getElementById("ws-number")?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
-    await page.click("#ws-number");
-    await sleep(300);
+    await clickSymbol(page, "③");
     const g = await page.$eval(editor, (el) => el.textContent);
-    record(results, "G. 들여쓰기 유지", /    ③/.test(g), g.replace(/\s+/g, " ").slice(0, 80));
+    record(results, "G. 새 줄 기호 삽입", /②[\s\S]*③/.test(g), g.replace(/\s+/g, " ").slice(0, 80));
+
+    const w = await page.evaluate(() => {
+      const body = document.querySelector(".answer-doc-body");
+      return {
+        drawLayer: !!body?.querySelector(".draw-layer"),
+        interactLayer: !!body?.querySelector(".draw-interact-layer"),
+        symbolToolbar: !!document.getElementById("ws-symbol-toolbar")?.querySelector("[data-symbol]"),
+        circledHint: document.querySelector(".ws-circled-number-hint")?.textContent?.includes("1)"),
+        noNumberBtn: !document.getElementById("ws-number"),
+      };
+    });
+    record(
+      results,
+      "W. 답안 주석·기호 툴바",
+      w.drawLayer && w.interactLayer && w.symbolToolbar && w.circledHint && w.noNumberBtn,
+      JSON.stringify(w)
+    );
+
+    await page.click('[data-tool="pen"]');
+    await sleep(200);
+    const answerDraw = await page.evaluate(() => {
+      const layer = document.querySelector(".answer-doc-body .draw-interact-layer");
+      return {
+        annotationMode: document.querySelector(".answer-doc-body")?.classList.contains("is-annotation-mode"),
+        pointerEvents: layer?.style.pointerEvents || "",
+      };
+    });
+    record(
+      results,
+      "X. 답안지 펜 모드",
+      answerDraw.annotationMode && answerDraw.pointerEvents === "auto",
+      JSON.stringify(answerDraw)
+    );
+    await page.click('[data-tool="view"]');
+    await sleep(150);
 
     await page.evaluate(() => {
       const ed = document.querySelector(".answer-doc-editor");
@@ -153,9 +182,15 @@ async function main() {
     const h = await page.evaluate(() => ({
       noInternalNav: !document.querySelector("#ws-pane-exam .ws-exam-nav"),
       noExamToolbar: !document.getElementById("ws-exam-toolbar"),
-      hasHeaderTools: !!document.getElementById("ws-header-exam-tools"),
+      hasExamPaneTools: !!document.querySelector("#ws-pane-exam #ws-header-exam-tools"),
+      notInHeader: !document.querySelector(".ws-toolbar #ws-header-exam-tools"),
     }));
-    record(results, "H. 시험지 위 툴바 제거", h.noInternalNav && h.noExamToolbar && h.hasHeaderTools, JSON.stringify(h));
+    record(
+      results,
+      "H. 시험지 위 툴바",
+      h.noInternalNav && h.noExamToolbar && h.hasExamPaneTools && h.notInHeader,
+      JSON.stringify(h)
+    );
 
     const i = await page.evaluate(() => ({
       prev: !!document.getElementById("ws-prev-page"),
@@ -166,18 +201,30 @@ async function main() {
     record(results, "I. 상단 도구 유지", i.prev && i.zoom && i.pen && i.undo, JSON.stringify(i));
 
     const layout = await page.evaluate(() => {
+      const examPane = document.getElementById("ws-pane-exam");
+      const answerPane = document.getElementById("ws-pane-answer");
+      const split = document.getElementById("ws-split-pane");
       const examScroll = document.querySelector("#ws-pane-exam .ws-pane-scroll");
       const answerScroll = document.querySelector("#ws-pane-answer .ws-pane-scroll");
+      const splitW = split?.clientWidth || 1;
+      const examW = examPane?.clientWidth || 0;
+      const answerW = answerPane?.clientWidth || 0;
       return {
         examH: examScroll?.clientHeight || 0,
         answerH: answerScroll?.clientHeight || 0,
-        centerH: document.querySelector(".ws-center")?.clientHeight || 0,
+        examShare: Math.round((examW / splitW) * 100),
+        answerShare: Math.round((answerW / splitW) * 100),
       };
     });
     record(
       results,
-      "J/K. PDF·답안 영역 확대",
-      layout.examH > 400 && layout.answerH > 400 && layout.examH >= layout.centerH * 0.55,
+      "J/K. 50:50 분할",
+      layout.examH > 400 &&
+        layout.answerH > 400 &&
+        layout.examShare >= 46 &&
+        layout.examShare <= 54 &&
+        layout.answerShare >= 46 &&
+        layout.answerShare <= 54,
       JSON.stringify(layout)
     );
 

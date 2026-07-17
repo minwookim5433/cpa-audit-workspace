@@ -2,6 +2,24 @@
  * Draft 세션 — 자동저장·dirty 추적
  */
 import { saveDraft, deleteDraft, getDraft } from "./workspace-attempt-service.js";
+import { hasMeaningfulAnswerContent } from "./workspace-answer-format.js";
+import { normalizeAnswerPages } from "./workspace-answer-editor.js";
+
+const DEFAULT_TIMER_DURATION = 120 * 60;
+
+export function hasInProgressWorkspace(ws, state) {
+  if (!ws) return false;
+  const pages = normalizeAnswerPages(ws.answerSheet || state?.answerSheet);
+  if (pages.some((page) => hasMeaningfulAnswerContent(String(page ?? "")))) return true;
+  if ((ws.drawAnnotations || state?.drawAnnotations || []).length > 0) return true;
+  if ((ws.timerSeconds || state?.timerSeconds || 0) > 0) return true;
+  const duration = Number(state?.timerDurationSeconds) || DEFAULT_TIMER_DURATION;
+  const remaining = Number(state?.timerRemainingSeconds);
+  if (Number.isFinite(remaining) && remaining < duration - 5) return true;
+  if (String(ws.attemptMemo || "").trim()) return true;
+  if ((ws.bookmarks || state?.bookmarks || []).length > 0) return true;
+  return false;
+}
 
 export function createAttemptSessionController({
   getSnapshot,
@@ -130,6 +148,8 @@ export function buildWorkspaceSnapshot(state, ws) {
     answerSheet: [...(ws.answerSheet || state.answerSheet || [])],
     answerSheetPage: ws.answerSheetPage ?? state.answerSheetPage ?? 0,
     timerSeconds: ws.timerSeconds ?? state.timerSeconds ?? 0,
+    timerDurationSeconds: state.timerDurationSeconds,
+    timerRemainingSeconds: state.timerRemainingSeconds,
     bookmarks: JSON.parse(JSON.stringify(ws.bookmarks || state.bookmarks || [])),
     drawAnnotations: JSON.parse(JSON.stringify(ws.drawAnnotations || state.drawAnnotations || [])),
     answerFontSize: ws.answerFontSize ?? state.answerFontSize,
@@ -139,6 +159,11 @@ export function buildWorkspaceSnapshot(state, ws) {
     memo: ws.attemptMemo || "",
     tags: [...(ws.attemptTags || [])],
     status: ws.attemptStatus || "draft",
+    caretOffset: state.caretOffset ?? ws.caretOffset ?? 0,
+    circledNumberSession: ws.circledNumberSession
+      ? JSON.parse(JSON.stringify(ws.circledNumberSession))
+      : null,
+    searchQuery: state.searchQuery || "",
   };
 }
 
@@ -156,6 +181,10 @@ export function applySnapshotToWorkspace(snapshot, state, ws) {
   ws.attemptMemo = snapshot.memo || "";
   ws.attemptTags = [...(snapshot.tags || [])];
   ws.attemptStatus = snapshot.status || "draft";
+  ws.circledNumberSession = snapshot.circledNumberSession
+    ? JSON.parse(JSON.stringify(snapshot.circledNumberSession))
+    : null;
+  ws.caretOffset = snapshot.caretOffset ?? 0;
 
   state.answerSheet = ws.answerSheet;
   state.answerSheetPage = ws.answerSheetPage;
@@ -165,6 +194,18 @@ export function applySnapshotToWorkspace(snapshot, state, ws) {
   state.answerFontSize = ws.answerFontSize;
   state.answerLetterSpacing = ws.answerLetterSpacing;
   state.currentPage = ws.currentPage;
+  state.caretOffset = ws.caretOffset;
+  state.circledNumberSession = ws.circledNumberSession;
+  if (snapshot.timerDurationSeconds != null) {
+    state.timerDurationSeconds = snapshot.timerDurationSeconds;
+  }
+  if (snapshot.timerRemainingSeconds != null) {
+    state.timerRemainingSeconds = snapshot.timerRemainingSeconds;
+  }
+  if (snapshot.searchQuery != null) {
+    state.searchQuery = snapshot.searchQuery;
+    ws.searchQuery = snapshot.searchQuery;
+  }
 }
 
 export function applyAttemptToWorkspace(attempt, state, ws) {

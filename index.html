@@ -99,47 +99,7 @@
         <button type="button" id="ws-doc-manage" class="ws-btn" title="시험지 관리">⚙</button>
       </div>
       <button type="button" id="ws-preview-btn" class="ws-btn">답안지 미리보기</button>
-      <div class="ws-header-exam-tools" id="ws-header-exam-tools" hidden>
-        <div class="ws-toolbar-divider"></div>
-        <button type="button" id="ws-prev-page" class="ws-btn ws-btn-fixed" disabled title="이전">◀</button>
-        <span class="ws-page-indicator">
-          <input type="number" id="ws-page-input" min="1" value="1" class="ws-input-short" />
-          <span id="ws-page-label">/ —</span>
-        </span>
-        <button type="button" id="ws-next-page" class="ws-btn ws-btn-fixed" disabled title="다음">▶</button>
-        <button type="button" id="ws-zoom-out" class="ws-btn ws-btn-fixed" title="축소">−</button>
-        <span id="ws-zoom-label" class="ws-zoom-label-fixed">100%</span>
-        <button type="button" id="ws-zoom-in" class="ws-btn ws-btn-fixed" title="확대">+</button>
-        <button type="button" id="ws-fit-width" class="ws-btn ws-btn-fit" title="너비 맞춤">맞춤</button>
-        <button type="button" class="ws-exam-tool-btn ws-btn-fixed is-active" data-tool="view" title="보기">보기</button>
-        <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="underline" title="밑줄">밑줄</button>
-        <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="highlighter" title="형광펜">형광</button>
-        <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="pen" title="펜">펜</button>
-        <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="eraser" title="지우개">지우개</button>
-        <span id="ws-exam-color-wrap" class="ws-exam-color-wrap" hidden>
-          <select id="ws-exam-line-color" class="ws-tool-select" title="밑줄 색상">
-            <option value="red">빨강</option>
-            <option value="blue">파랑</option>
-            <option value="black">검정</option>
-          </select>
-          <select id="ws-exam-highlight-color" class="ws-tool-select" title="형광펜 색" hidden>
-            <option value="yellow">노랑</option>
-            <option value="green">초록</option>
-            <option value="pink">분홍</option>
-          </select>
-          <select id="ws-exam-pen-color" class="ws-tool-select" title="펜 색상" hidden>
-            <option value="red">빨강</option>
-            <option value="blue">파랑</option>
-            <option value="black">검정</option>
-          </select>
-          <select id="ws-exam-pen-width" class="ws-tool-select" title="펜 굵기" hidden>
-            <option value="thin">가늘게</option>
-            <option value="normal">보통</option>
-          </select>
-        </span>
-        <button type="button" id="ws-annot-undo" class="ws-btn ws-btn-fixed" title="주석 실행 취소">↶</button>
-        <button type="button" id="ws-annot-clear-page" class="ws-btn ws-btn-fixed" title="현재 페이지 주석 삭제">🗑</button>
-      </div>
+      <button type="button" id="ws-save-pause-btn" class="ws-btn" title="답안·주석·페이지 위치를 저장하고 나중에 이어서 풀기">저장하고 나가기</button>
       <span id="ws-save-status" class="ws-save-status">저장됨</span>
       <span id="ws-status" class="ws-status" aria-live="polite"></span>
     </header>
@@ -148,8 +108,15 @@
       <ol class="ws-usage-guide-list">
         <li>시험지 PDF 선택</li>
         <li>오른쪽 답안지 작성</li>
+        <li>중간에 멈추려면 <strong>저장하고 나가기</strong> — 다음에 같은 시험지를 열면 이어서 풀 수 있습니다</li>
         <li>시험 종료 후 PDF 저장</li>
       </ol>
+      <p class="ws-usage-guide-note">풀이 내용(답안·주석·페이지·타이머)은 자동 저장됩니다. 북마크는 시험지 페이지 위치 표시용이며, 이어 풀기는 자동 저장으로 처리됩니다.</p>
+    </div>
+
+    <div id="ws-resume-banner" class="ws-resume-banner" hidden>
+      <span id="ws-resume-banner-text">마지막 풀이 상태를 불러왔습니다.</span>
+      <button type="button" id="ws-resume-banner-close" class="ws-btn ws-resume-banner-close" aria-label="닫기">✕</button>
     </div>
 
     <div id="ws-doc-manage-modal" class="ws-modal ws-modal-sm" hidden>
@@ -264,6 +231,46 @@
 
         <div class="ws-split-pane" id="ws-split-pane">
           <section class="ws-pane ws-pane-exam is-active" id="ws-pane-exam">
+            <div class="ws-header-exam-tools ws-exam-pane-toolbar" id="ws-header-exam-tools" hidden>
+              <button type="button" id="ws-prev-page" class="ws-btn ws-btn-fixed" disabled title="이전">◀</button>
+              <span class="ws-page-indicator">
+                <input type="number" id="ws-page-input" min="1" value="1" class="ws-input-short" />
+                <span id="ws-page-label">/ —</span>
+              </span>
+              <button type="button" id="ws-next-page" class="ws-btn ws-btn-fixed" disabled title="다음">▶</button>
+              <button type="button" id="ws-zoom-out" class="ws-btn ws-btn-fixed" title="축소">−</button>
+              <span id="ws-zoom-label" class="ws-zoom-label-fixed">100%</span>
+              <button type="button" id="ws-zoom-in" class="ws-btn ws-btn-fixed" title="확대">+</button>
+              <button type="button" id="ws-fit-width" class="ws-btn ws-btn-fit" title="너비 맞춤">맞춤</button>
+              <button type="button" class="ws-exam-tool-btn ws-btn-fixed is-active" data-tool="view" title="보기">보기</button>
+              <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="underline" title="밑줄">밑줄</button>
+              <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="highlighter" title="형광펜">형광</button>
+              <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="pen" title="펜">펜</button>
+              <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="eraser" title="지우개">지우개</button>
+              <span id="ws-exam-color-wrap" class="ws-exam-color-wrap" hidden>
+                <select id="ws-exam-line-color" class="ws-tool-select" title="밑줄 색상">
+                  <option value="red">빨강</option>
+                  <option value="blue">파랑</option>
+                  <option value="black">검정</option>
+                </select>
+                <select id="ws-exam-highlight-color" class="ws-tool-select" title="형광펜 색" hidden>
+                  <option value="yellow">노랑</option>
+                  <option value="green">초록</option>
+                  <option value="pink">분홍</option>
+                </select>
+                <select id="ws-exam-pen-color" class="ws-tool-select" title="펜 색상" hidden>
+                  <option value="red">빨강</option>
+                  <option value="blue">파랑</option>
+                  <option value="black">검정</option>
+                </select>
+                <select id="ws-exam-pen-width" class="ws-tool-select" title="펜 굵기" hidden>
+                  <option value="thin">가늘게</option>
+                  <option value="normal">보통</option>
+                </select>
+              </span>
+              <button type="button" id="ws-annot-undo" class="ws-btn ws-btn-fixed" title="주석 실행 취소">↶</button>
+              <button type="button" id="ws-annot-clear-page" class="ws-btn ws-btn-fixed" title="현재 페이지 주석 삭제">🗑</button>
+            </div>
             <div class="ws-pane-scroll ws-exam-scroll" id="ws-exam">
               <div id="ws-exam-pages" class="ws-exam-pages"></div>
             </div>
@@ -299,8 +306,14 @@
                 </label>
               </div>
               <div class="ws-toolbar-divider"></div>
-              <button type="button" id="ws-number" class="ws-btn">번호</button>
-              <button type="button" id="ws-number-from-one" class="ws-btn">①부터</button>
+              <div class="ws-symbol-panel">
+                <span class="ws-symbol-label">기호</span>
+                <div class="ws-symbol-toolbar" id="ws-symbol-toolbar" role="toolbar" aria-label="기호 입력"></div>
+                <span class="ws-circled-number-hint" title="숫자 뒤에 스페이스를 누르면 동그라미 번호로 바뀝니다">
+                  동그라미 번호: <code>1)</code> 입력 후 스페이스 → ①
+                </span>
+              </div>
+              <div class="ws-toolbar-divider"></div>
               <button type="button" id="ws-del-line" class="ws-btn">줄 삭제</button>
               <button type="button" id="ws-answer-preview-btn" class="ws-btn">미리보기</button>
               <span id="ws-row-stats" class="ws-input-stats">0 / 25행 · 0 / 250행</span>
@@ -490,10 +503,10 @@
 
   <div id="ws-attempt-existing-modal" class="ws-modal ws-modal-sm" hidden>
     <div class="ws-modal-dialog" role="dialog" aria-modal="true">
-      <header class="ws-modal-header"><h2>이 문제의 기존 풀이 기록이 있습니다.</h2></header>
+      <header class="ws-modal-header"><h2>이 문제의 풀이 기록이 있습니다</h2></header>
       <div class="ws-modal-body" id="ws-attempt-existing-summary"></div>
       <footer class="ws-modal-footer ws-modal-footer-col">
-        <button type="button" class="ws-btn ws-btn-primary" data-action="load-latest">최근 풀이 불러오기</button>
+        <button type="button" class="ws-btn ws-btn-primary" data-action="load-latest">최근 풀이 이어서 불러오기</button>
         <button type="button" class="ws-btn" data-action="open-list">풀이 기록 선택</button>
         <button type="button" class="ws-btn" data-action="start-new">새로 풀기</button>
         <button type="button" class="ws-btn" data-action="cancel-existing">취소</button>

@@ -10,7 +10,7 @@ import {
 } from "./workspace-exam-viewer.js";
 import { buildPageTexts, searchInPages, renderSearchResults } from "./workspace-search.js";
 import { createBookmark, renderBookmarkPanel } from "./workspace-bookmarks.js";
-import { TOOLS, createDrawController, isDrawingTool, isInteractTool, normalizeDrawTool } from "./workspace-draw-tools.js";
+import { TOOLS, createDrawController, isDrawingTool, isInteractTool, normalizeDrawTool, getAnnotationSurface } from "./workspace-draw-tools.js";
 import { applyDrawToolCursor, CURSOR_SPECS } from "./workspace-draw-cursors.js";
 import {
   ANSWER_PAGE_COUNT,
@@ -42,6 +42,7 @@ import {
 } from "./workspace-exam-pan-zoom.js";
 import { createFloatingTimer, loadTimerPosition } from "./workspace-floating-timer.js";
 import { createPreviewController } from "./workspace-answer-preview.js";
+import { renderAnswerSymbolToolbar } from "./workspace-answer-symbols.js";
 import { stripFormatSpansFromSheet, hasMeaningfulAnswerContent, normalizeAnswerText, plainTextFromHtml } from "./workspace-answer-format.js";
 import { saveExamAttempt, getExamAttempt } from "./workspace-exam-attempts.js";
 import { createExamResultController } from "./workspace-exam-result.js";
@@ -55,11 +56,11 @@ import { initAttemptBridge } from "./workspace-attempt-bridge.js";
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/node_modules/pdfjs-dist/build/pdf.worker.mjs";
 
 const STORAGE_KEY = "cpa-workspace-session";
-const DEFAULT_PANEL_RATIO = 0.4;
+const DEFAULT_PANEL_RATIO = 0.5;
 const VIEW_PRESETS = {
-  equal: 0.4,
-  exam: 0.55,
-  answer: 0.32,
+  equal: 0.5,
+  exam: 0.62,
+  answer: 0.38,
 };
 const MIN_EXAM_RATIO = 0.35;
 const MIN_ANSWER_RATIO = 0.35;
@@ -117,7 +118,9 @@ let renderToken = 0;
 let timerInterval = null;
 let saveDebounce = null;
 let previewController = null;
-let drawController = null;
+let drawControllerExam = null;
+let drawControllerAnswer = null;
+let activeDrawSurface = "exam";
 let answerDocController = null;
 let examResultController = null;
 let currentExamAttempt = null;
@@ -202,6 +205,48 @@ function setSaveStatus(kind = "saved") {
     els.saveStatus.textContent = "저장됨";
     els.saveStatus.className = "ws-save-status";
   }
+}
+
+function showResumeBanner(source = "session") {
+  const banner = document.getElementById("ws-resume-banner");
+  const text = document.getElementById("ws-resume-banner-text");
+  if (!banner || !text) return;
+  text.textContent =
+    source === "draft"
+      ? "저장된 초안을 복원했습니다. 답안·주석·시험지 페이지 위치를 이어서 풀 수 있습니다."
+      : "마지막 풀이 상태를 불러왔습니다. 답안·주석·시험지 페이지 위치를 이어서 풀 수 있습니다.";
+  banner.hidden = false;
+  clearTimeout(showResumeBanner._timer);
+  showResumeBanner._timer = setTimeout(() => {
+    banner.hidden = true;
+  }, 12000);
+}
+
+async function restoreExamViewportFromWorkspace() {
+  if (!state.pdfDoc) return;
+  const saved = getSavedPageView(state.currentPage || 1);
+  if (!saved) {
+    updatePageNav();
+    return;
+  }
+  state.scale = clampExamScale(saved.scale);
+  state.fitWidth = saved.fitWidth ?? false;
+  state.manualZoom = saved.manualZoom ?? true;
+  const ws = getActiveWorkspace();
+  if (ws) {
+    ws.scale = state.scale;
+    ws.fitWidth = state.fitWidth;
+    ws.manualZoom = state.manualZoom;
+  }
+  await renderExam();
+  if (els.exam) {
+    els.exam.scrollLeft = saved.scrollLeft || 0;
+    els.exam.scrollTop = saved.scrollTop || 0;
+    clampExamScroll(els.exam);
+  }
+  updatePageNav();
+  if (els.searchInput) els.searchInput.value = state.searchQuery || "";
+  renderSearchResults(els.searchResults, state.searchResults, state.searchIdx, jumpToSearchResult);
 }
 
 function pdfFingerprint(file) {
@@ -638,7 +683,7 @@ async function refreshWorkspaceUi() {
   updatePageNav();
   refreshBookmarkPanel();
   bindDrawController();
-  drawController?.refresh();
+  refreshAllDrawLayers();
   updateDrawToolUi();
   updateTypographyUi();
   attemptBridge?.syncMemoPanelForActive?.();
@@ -867,8 +912,10 @@ function applyPanelRatio(ratio) {
   if (!paneExam || !paneAnswer) return;
   const r = Math.max(MIN_EXAM_RATIO, Math.min(1 - MIN_ANSWER_RATIO, Number(ratio) || DEFAULT_PANEL_RATIO));
   state.panelRatio = r;
-  paneExam.style.flex = `0 0 ${Math.round(r * 1000) / 10}%`;
-  paneAnswer.style.flex = "1 1 auto";
+  paneExam.style.flex = `${r} 1 0`;
+  paneAnswer.style.flex = `${1 - r} 1 0`;
+  paneExam.style.minWidth = "0";
+  paneAnswer.style.minWidth = "0";
   document.documentElement.style.setProperty("--ws-panel-ratio", String(r));
 }
 
@@ -1046,6 +1093,63 @@ function getDrawInteractLayer() {
   return getPageContainer()?.querySelector(".draw-interact-layer") || null;
 }
 
+function getAnswerDrawContainer() {
+  return els.answerEditor?.querySelector(".answer-doc-body") || null;
+}
+
+function getAnswerDrawInteractLayer() {
+  return getAnswerDrawContainer()?.querySelector(".draw-interact-layer") || null;
+}
+
+function refreshAllDrawLayers() {
+  drawControllerExam?.refresh();
+  drawControllerAnswer?.refresh();
+}
+
+function syncAllDrawInteractLayers() {
+  drawControllerExam?.syncInteractLayer?.();
+  drawControllerAnswer?.syncInteractLayer?.();
+}
+
+function cancelAllDrawActive() {
+  drawControllerExam?.cancelActive?.();
+  drawControllerAnswer?.cancelActive?.();
+}
+
+function createSharedDrawController(surface, getPageNumber) {
+  return createDrawController({
+    getContainer: surface === "exam" ? getPageContainer : getAnswerDrawContainer,
+    getInteractLayer: surface === "exam" ? getDrawInteractLayer : getAnswerDrawInteractLayer,
+    getAnnotations: () => state.drawAnnotations,
+    setAnnotations: (anns) => {
+      state.drawAnnotations = [...anns];
+      const ws = getActiveWorkspace();
+      if (ws) ws.drawAnnotations = [...anns];
+    },
+    getToolState: () => ({
+      tool: state.drawTool,
+      lineColor: state.lineColor,
+      highlightColor: state.highlightColor,
+      penColor: state.penColor,
+      penWidth: state.penWidth,
+      pageNumber: getPageNumber(),
+      pdfFingerprint: state.pdfFingerprint,
+      surface,
+    }),
+    onChange: (action) => {
+      if (action?.type === "add") pushDrawUndoAction(action);
+      scheduleSave();
+    },
+    onDelete: (action) => {
+      if (action?.type === "delete-annotation") pushDrawUndoAction(action);
+      scheduleSave();
+    },
+    onInteractStart: () => {
+      activeDrawSurface = surface;
+    },
+  });
+}
+
 function pushDrawUndoAction(action) {
   const ws = getActiveWorkspace();
   if (!ws || !action) return;
@@ -1084,42 +1188,22 @@ function pushDrawUndo() {
 
 
 function bindDrawController() {
-  const layer = getDrawInteractLayer();
-  if (!layer) return;
-
-  if (!drawController) {
-    drawController = createDrawController({
-      getContainer: getPageContainer,
-      getInteractLayer: getDrawInteractLayer,
-      getAnnotations: () => state.drawAnnotations,
-      setAnnotations: (anns) => {
-        state.drawAnnotations = [...anns];
-        const ws = getActiveWorkspace();
-        if (ws) ws.drawAnnotations = [...anns];
-      },
-      getToolState: () => ({
-        tool: state.drawTool,
-        lineColor: state.lineColor,
-        highlightColor: state.highlightColor,
-        penColor: state.penColor,
-        penWidth: state.penWidth,
-        pageNumber: state.currentPage,
-        pdfFingerprint: state.pdfFingerprint,
-      }),
-      onChange: (action) => {
-        if (action?.type === "add") pushDrawUndoAction(action);
-        scheduleSave();
-      },
-      onDelete: (action) => {
-        if (action?.type === "delete-annotation") pushDrawUndoAction(action);
-        scheduleSave();
-      },
-    });
-    drawController.bind(layer);
-  } else {
-    drawController.bind(layer);
-    drawController.refresh();
+  const examLayer = getDrawInteractLayer();
+  if (examLayer) {
+    if (!drawControllerExam) drawControllerExam = createSharedDrawController("exam", () => state.currentPage);
+    drawControllerExam.bind(examLayer);
+    drawControllerExam.refresh();
   }
+
+  const answerLayer = getAnswerDrawInteractLayer();
+  if (answerLayer) {
+    if (!drawControllerAnswer) {
+      drawControllerAnswer = createSharedDrawController("answer", () => state.answerSheetPage + 1);
+    }
+    drawControllerAnswer.bind(answerLayer);
+    drawControllerAnswer.refresh();
+  }
+
   updateDrawToolUi();
 }
 
@@ -1150,19 +1234,23 @@ async function renderExam() {
 
 function clearPageDrawAnnotations() {
   const fp = state.pdfFingerprint;
-  const page = state.currentPage;
-  const before = state.drawAnnotations.filter((a) => a.pdfFingerprint === fp && a.pageNumber === page).length;
+  const surface = activeDrawSurface || "exam";
+  const page = surface === "answer" ? state.answerSheetPage + 1 : state.currentPage;
+  const before = state.drawAnnotations.filter(
+    (a) => a.pdfFingerprint === fp && a.pageNumber === page && getAnnotationSurface(a) === surface
+  ).length;
   if (!before) {
     showToast("삭제할 주석이 없습니다.");
     return;
   }
-  if (!window.confirm("현재 페이지의 모든 주석을 삭제하시겠습니까?")) return;
+  const surfaceLabel = surface === "answer" ? "답안지" : "시험지";
+  if (!window.confirm(`현재 ${surfaceLabel} 페이지의 모든 주석을 삭제하시겠습니까?`)) return;
   state.drawAnnotations = state.drawAnnotations.filter(
-    (a) => !(a.pdfFingerprint === fp && a.pageNumber === page)
+    (a) => !(a.pdfFingerprint === fp && a.pageNumber === page && getAnnotationSurface(a) === surface)
   );
   const ws = getActiveWorkspace();
   if (ws) ws.drawAnnotations = state.drawAnnotations;
-  drawController?.refresh();
+  refreshAllDrawLayers();
   scheduleSave();
   showToast("현재 페이지 주석을 삭제했습니다.");
 }
@@ -1219,20 +1307,33 @@ function updateDrawToolUi() {
   if (penWidthSel && state.penWidth) penWidthSel.value = state.penWidth;
 
   const layer = getDrawInteractLayer();
+  const answerLayer = getAnswerDrawInteractLayer();
+  const answerBody = getAnswerDrawContainer();
   const scroll = els.exam;
+  const answerScroll = els.answerEditor;
   const pageContainer = getPageContainer();
   const annotating = isInteractTool(tool);
   if (scroll) {
     scroll.classList.toggle("is-annotation-mode", annotating);
     applyDrawToolCursor(scroll, annotating ? tool : TOOLS.view);
   }
+  if (answerScroll) {
+    answerScroll.classList.toggle("is-annotation-mode", annotating);
+    applyDrawToolCursor(answerScroll, annotating ? tool : TOOLS.view);
+  }
   if (pageContainer) {
     pageContainer.classList.toggle("is-annotation-mode", annotating);
   }
+  if (answerBody) {
+    answerBody.classList.toggle("is-annotation-mode", annotating);
+  }
   if (layer) {
     applyDrawToolCursor(layer, annotating ? tool : TOOLS.view);
-    drawController?.syncInteractLayer?.();
   }
+  if (answerLayer) {
+    applyDrawToolCursor(answerLayer, annotating ? tool : TOOLS.view);
+  }
+  syncAllDrawInteractLayers();
 }
 
 function initAnswerDocument() {
@@ -1266,6 +1367,7 @@ function initAnswerDocument() {
       syncAnswerPageToState();
       updateAnswerPageNav();
       answerDocController?.render(true);
+      refreshAllDrawLayers();
     },
       showToast,
     });
@@ -1274,6 +1376,7 @@ function initAnswerDocument() {
   }
   answerDocController.render();
   applyAnswerTypography(getAnswerTypography(), { save: false });
+  bindDrawController();
 }
 
 function getAnswerTypography() {
@@ -1572,20 +1675,24 @@ function resetTimerCountdown() {
   scheduleSave();
 }
 
-function bindCircledNumberButton(buttonId, resetSession) {
-  const btn = document.getElementById(buttonId);
-  btn?.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
+function bindSymbolToolbar() {
+  const toolbar = document.getElementById("ws-symbol-toolbar");
+  renderAnswerSymbolToolbar(toolbar);
+  toolbar?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-symbol]");
+    if (!btn) return;
     answerDocController?.flushPersist?.();
     answerDocController?.saveAnswerSelection();
-  });
-  btn?.addEventListener("click", () => {
-    const result = answerDocController?.insertCircledNumber({ resetSession });
-    if (result?.ok) {
-      state.circledNumberSession = result.session;
-      syncAnswerPageToState();
+    const ok = answerDocController?.insertAtSavedRange(btn.dataset.symbol);
+    if (ok) {
       updateRowStats();
       scheduleSave();
+    }
+  });
+  toolbar?.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("[data-symbol]")) {
+      answerDocController?.flushPersist?.();
+      answerDocController?.saveAnswerSelection();
     }
   });
 }
@@ -1601,7 +1708,7 @@ function undoLastDrawAnnotation() {
   ws.drawAnnotations = [...state.drawAnnotations];
   if (!ws.drawRedoActions) ws.drawRedoActions = [];
   ws.drawRedoActions.push(action);
-  drawController?.refresh();
+  refreshAllDrawLayers();
   scheduleSave();
   showToast("주석을 실행 취소했습니다.");
 }
@@ -1618,7 +1725,7 @@ function handleDrawRedo() {
   ws.drawAnnotations = [...state.drawAnnotations];
   if (!ws.drawUndoActions) ws.drawUndoActions = [];
   ws.drawUndoActions.push(action);
-  drawController?.refresh();
+  refreshAllDrawLayers();
   scheduleSave();
 }
 
@@ -1646,6 +1753,7 @@ function goToAnswerPage(pageIndex) {
   }
   setupAnswerEditor();
   updateAnswerPageNav();
+  bindDrawController();
   scheduleSave();
 }
 
@@ -2196,6 +2304,14 @@ function bindEvents() {
     if (e.target === els.docManageModal) els.docManageModal.hidden = true;
   });
 
+  document.getElementById("ws-save-pause-btn")?.addEventListener("click", () => {
+    attemptBridge?.saveAndPause?.();
+  });
+  document.getElementById("ws-resume-banner-close")?.addEventListener("click", () => {
+    const banner = document.getElementById("ws-resume-banner");
+    if (banner) banner.hidden = true;
+  });
+
   els.prevPage?.addEventListener("click", navPrev);
   els.nextPage?.addEventListener("click", navNext);
   els.pageInput?.addEventListener("change", () => goToPage(els.pageInput.value));
@@ -2222,10 +2338,10 @@ function bindEvents() {
 
   document.querySelectorAll(".ws-exam-tool-btn[data-tool]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      drawController?.cancelActive?.();
+      cancelAllDrawActive();
       state.drawTool = btn.dataset.tool;
       updateDrawToolUi();
-      drawController?.refresh();
+      refreshAllDrawLayers();
       scheduleSave();
     });
   });
@@ -2292,8 +2408,7 @@ function bindEvents() {
   bindGlobalTypographyControl("ws-font-size-range", "ws-font-size-input", "fontSize");
   bindGlobalTypographyControl("ws-letter-spacing-range", "ws-letter-spacing-input", "letterSpacing");
 
-  bindCircledNumberButton("ws-number", false);
-  bindCircledNumberButton("ws-number-from-one", true);
+  bindSymbolToolbar();
 
   document.getElementById("ws-del-line")?.addEventListener("click", () => {
     answerDocController?.deleteCurrentLine();
@@ -2387,6 +2502,10 @@ export async function initWorkspace() {
     showToast,
     setSaveStatus,
     examResultController,
+    flushSaveNow,
+    onResumeRestored: showResumeBanner,
+    flushAnswerPersist: () => answerDocController?.flushPersist?.(),
+    restoreExamViewport: restoreExamViewportFromWorkspace,
   });
   window.__workspaceOpenForProblem = openForProblem;
   window.__workspaceSwitchPdf = switchPdfSlot;

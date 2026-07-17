@@ -22,6 +22,7 @@ import {
   mountOffscreenSheet,
   cloneSheetFromMount,
   SHEET_MARKUP,
+  ensureAnswerDrawLayers,
 } from "./workspace-answer-clone.js";
 import {
   splitHtmlAtVisualLines,
@@ -325,6 +326,7 @@ export function createAnswerDocumentController({
         sheetEl.dataset.page = String(pageIndex + 1);
         const pageLabel = sheetEl.querySelector(".answer-doc-page");
         if (pageLabel) pageLabel.textContent = `${pageIndex + 1} / ${ANSWER_PAGE_COUNT}`;
+        ensureAnswerDrawLayers(sheetEl.querySelector(".answer-doc-body"));
       }
       const pageChanged = lastRenderedPageIndex !== pageIndex;
       if (pageChanged || getEditorContent(existing) !== pageContent) {

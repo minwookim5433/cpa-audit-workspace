@@ -75,12 +75,26 @@ export function getPenWidthNorm(widthKey) {
   return PEN_WIDTHS[widthKey] || PEN_WIDTHS.thin;
 }
 
-export function createLineAnnotation({ pdfFingerprint, pageNumber, x1, y1, x2, y2, color = "red" }) {
+export function getAnnotationSurface(annotation) {
+  return annotation?.surface || "exam";
+}
+
+export function createLineAnnotation({
+  pdfFingerprint,
+  pageNumber,
+  x1,
+  y1,
+  x2,
+  y2,
+  color = "red",
+  surface = "exam",
+}) {
   return {
     id: `ln-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
     type: "line",
     pdfFingerprint,
     pageNumber,
+    surface,
     x1: clamp01(x1),
     y1: clamp01(y1),
     x2: clamp01(x2),
@@ -91,7 +105,14 @@ export function createLineAnnotation({ pdfFingerprint, pageNumber, x1, y1, x2, y
   };
 }
 
-export function createStrokeAnnotation({ pdfFingerprint, pageNumber, points, color = "yellow", width = HIGHLIGHT_WIDTH_NORM }) {
+export function createStrokeAnnotation({
+  pdfFingerprint,
+  pageNumber,
+  points,
+  color = "yellow",
+  width = HIGHLIGHT_WIDTH_NORM,
+  surface = "exam",
+}) {
   const w = clampHighlightWidth(width);
   const offsetPoints = points.map(([x, y]) => [clamp01(x), clamp01(y + HIGHLIGHT_Y_OFFSET)]);
   return {
@@ -99,6 +120,7 @@ export function createStrokeAnnotation({ pdfFingerprint, pageNumber, points, col
     type: "stroke",
     pdfFingerprint,
     pageNumber,
+    surface,
     points: offsetPoints.map(([x, y]) => [clamp01(x), clamp01(y)]),
     color,
     width: w,
@@ -112,6 +134,7 @@ export function createPenAnnotation({
   points,
   color = "red",
   width = "thin",
+  surface = "exam",
 }) {
   const widthNorm = getPenWidthNorm(width);
   return {
@@ -119,6 +142,7 @@ export function createPenAnnotation({
     type: "pen",
     pdfFingerprint,
     pageNumber,
+    surface,
     points: points.map(([x, y]) => [clamp01(x), clamp01(y)]),
     color,
     width,
@@ -212,8 +236,10 @@ export function hitTestAnnotation(ann, px, py, w, h) {
 }
 
 /** 가장 최근 주석부터 hit test */
-export function findHitAnnotation(annotations, pageNumber, px, py, w, h) {
-  const pageAnns = (annotations || []).filter((a) => a.pageNumber === pageNumber);
+export function findHitAnnotation(annotations, pageNumber, px, py, w, h, surface = "exam") {
+  const pageAnns = (annotations || []).filter(
+    (a) => a.pageNumber === pageNumber && getAnnotationSurface(a) === surface
+  );
   const sorted = [...pageAnns].sort((a, b) => {
     const ta = Date.parse(a.createdAt) || 0;
     const tb = Date.parse(b.createdAt) || 0;
@@ -222,9 +248,11 @@ export function findHitAnnotation(annotations, pageNumber, px, py, w, h) {
   return sorted.find((ann) => hitTestAnnotation(ann, px, py, w, h)) || null;
 }
 
-export function renderDrawLayer(svgEl, annotations, pageNumber) {
+export function renderDrawLayer(svgEl, annotations, pageNumber, surface = "exam") {
   if (!svgEl) return;
-  const items = (annotations || []).filter((a) => a.pageNumber === pageNumber);
+  const items = (annotations || []).filter(
+    (a) => a.pageNumber === pageNumber && getAnnotationSurface(a) === surface
+  );
   const parts = items.map((ann) => {
     if (ann.type === "line") {
       const col = LINE_COLORS[ann.color] || ann.color || LINE_COLORS.red;
@@ -260,6 +288,7 @@ export function createDrawController({
   getToolState,
   onChange,
   onDelete,
+  onInteractStart,
 }) {
   let drawing = null;
   let erasing = null;
@@ -272,7 +301,8 @@ export function createDrawController({
   }
 
   function refresh() {
-    renderDrawLayer(getSvg(), getAnnotations(), getToolState().pageNumber);
+    const ts = getToolState();
+    renderDrawLayer(getSvg(), getAnnotations(), ts.pageNumber, ts.surface || "exam");
     syncInteractLayer();
   }
 
@@ -318,7 +348,7 @@ export function createDrawController({
     if (!container || !erasing) return;
     const { px, py, w, h } = pixelFromEvent(e, container);
     const ts = getToolState();
-    const hit = findHitAnnotation(getAnnotations(), ts.pageNumber, px, py, w, h);
+    const hit = findHitAnnotation(getAnnotations(), ts.pageNumber, px, py, w, h, ts.surface || "exam");
     if (!hit || erasing.deletedIds.has(hit.id)) return;
     erasing.deletedIds.add(hit.id);
     const anns = [...getAnnotations()];
@@ -328,7 +358,7 @@ export function createDrawController({
     anns.splice(idx, 1);
     setAnnotations(anns);
     onDelete?.({ type: "delete-annotation", annotation: deleted, index: idx });
-    renderDrawLayer(getSvg(), getAnnotations(), ts.pageNumber);
+    renderDrawLayer(getSvg(), getAnnotations(), ts.pageNumber, ts.surface || "exam");
   }
 
   function onPointerDown(e) {
@@ -336,6 +366,7 @@ export function createDrawController({
     if (!isInteractTool(tool)) return;
     if (e.button !== 0) return;
 
+    onInteractStart?.();
     e.preventDefault();
     boundLayer?.setPointerCapture(e.pointerId);
     activePointerId = e.pointerId;
@@ -448,6 +479,7 @@ export function createDrawController({
     const ts = getToolState();
     const fp = ts.pdfFingerprint;
     const page = ts.pageNumber;
+    const surface = ts.surface || "exam";
     const anns = [...getAnnotations()];
 
     getSvg()?.querySelectorAll(".draw-preview, .draw-preview-stroke, .draw-preview-pen").forEach((el) => el.remove());
@@ -461,6 +493,7 @@ export function createDrawController({
           pageNumber: page,
           ...snapped,
           color: ts.lineColor,
+          surface,
         });
         anns.push(newAnn);
         setAnnotations(anns);
@@ -473,6 +506,7 @@ export function createDrawController({
         points: drawing.points,
         color: ts.highlightColor,
         width: HIGHLIGHT_WIDTH_NORM,
+        surface,
       });
       anns.push(newAnn);
       setAnnotations(anns);
@@ -484,6 +518,7 @@ export function createDrawController({
         points: drawing.points,
         color: ts.penColor,
         width: ts.penWidth,
+        surface,
       });
       anns.push(newAnn);
       setAnnotations(anns);

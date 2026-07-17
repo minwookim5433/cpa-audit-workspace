@@ -15,8 +15,23 @@ export const SHEET_MARKUP = (pageIndex) => `
         ${Array.from({ length: 25 }, () => `<div class="answer-doc-bg-line"></div>`).join("")}
       </div>
       <div class="answer-doc-editor" spellcheck="false" role="textbox" aria-multiline="true"></div>
+      <svg class="draw-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div class="draw-interact-layer" aria-hidden="true"></div>
     </div>
   </div>`;
+
+export function ensureAnswerDrawLayers(bodyEl) {
+  if (!bodyEl || bodyEl.querySelector(".draw-layer")) return;
+  const drawLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  drawLayer.classList.add("draw-layer");
+  drawLayer.setAttribute("viewBox", "0 0 100 100");
+  drawLayer.setAttribute("preserveAspectRatio", "none");
+  drawLayer.setAttribute("aria-hidden", "true");
+  const drawInteract = document.createElement("div");
+  drawInteract.className = "draw-interact-layer";
+  drawInteract.setAttribute("aria-hidden", "true");
+  bodyEl.append(drawLayer, drawInteract);
+}
 
 export function finalizeSheetClone(clone) {
   if (!clone) return clone;

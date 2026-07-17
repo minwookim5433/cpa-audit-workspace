@@ -11,12 +11,14 @@ import {
   saveProblemNote,
   migrateLegacyAttempts,
   duplicateAttemptAsNew,
+  deleteDraft,
 } from "./workspace-attempt-service.js";
 import {
   createAttemptSessionController,
   buildWorkspaceSnapshot,
   applySnapshotToWorkspace,
   applyAttemptToWorkspace,
+  hasInProgressWorkspace,
 } from "./workspace-attempt-session.js";
 import { createAttemptUiController } from "./workspace-attempt-ui.js";
 import {
@@ -39,6 +41,10 @@ export function initAttemptBridge({
   showToast,
   setSaveStatus,
   examResultController,
+  flushSaveNow,
+  onResumeRestored,
+  flushAnswerPersist,
+  restoreExamViewport,
 }) {
   let attemptUi = null;
   let attemptHistory = null;
@@ -126,6 +132,7 @@ export function initAttemptBridge({
 
   async function refreshWorkspaceAfterLoad() {
     await refreshWorkspaceUi?.();
+    await restoreExamViewport?.();
     syncMemoPanelForActive();
     attemptHistory?.refresh?.();
   }
@@ -149,6 +156,8 @@ export function initAttemptBridge({
     if (!ws) return;
     const attempts = await listAttemptsByProblemKey(context.problemKey);
     const latest = attempts[0];
+
+    await deleteDraft(context.problemKey).catch(() => {});
 
     ws.answerSheet = createEmptyAnswerSheet();
     ws.answerSheetPage = 0;
@@ -183,16 +192,35 @@ export function initAttemptBridge({
     if (!ctx) return;
     attemptSession.bindSession({ key: ctx.problemKey, docId: ctx.documentId });
 
-    if (!forcePrompt) {
-      const draft = await attemptSession.restoreDraftIfAny(ctx.problemKey);
-      if (draft) {
-        await refreshWorkspaceAfterLoad();
-        showToast?.("작업 중이던 내용을 복원했습니다.");
-        return;
-      }
+    const ws = getActiveWorkspace();
+    const inProgress = hasInProgressWorkspace(ws, state);
+
+    const draft = await attemptSession.restoreDraftIfAny(ctx.problemKey);
+    if (draft) {
+      await refreshWorkspaceAfterLoad();
+      onResumeRestored?.("draft");
+      showToast?.("이어서 풀기: 저장된 초안을 복원했습니다.");
+      return;
+    }
+
+    if (inProgress) {
+      attemptSession.markDirty();
+      await attemptSession.flushDraftNow();
+      attemptSession.markClean(buildWorkspaceSnapshot(state, ws));
+      await refreshWorkspaceAfterLoad();
+      onResumeRestored?.("session");
+      showToast?.("이어서 풀기: 마지막 풀이 상태를 불러왔습니다.");
+      return;
     }
 
     if (skipAttemptPrompt && !forcePrompt) return;
+
+    const attempts = await listAttemptsByProblemKey(ctx.problemKey);
+    if (attempts.length) {
+      await attemptUi.showExistingAttemptsModal(ctx);
+      return;
+    }
+
     await startFreshAttempt(ctx, { copyTags: false, copyMemo: false, copyAnnotations: false });
   }
 
@@ -231,6 +259,7 @@ export function initAttemptBridge({
       attemptId: attempt.id,
     });
     attemptSession.markClean(buildWorkspaceSnapshot(state, getActiveWorkspace()));
+    await deleteDraft(payload.problemKey).catch(() => {});
     await attemptHistory?.refresh?.();
     window.__workspaceOnAttemptCompleted?.(attempt);
     return attempt;
@@ -348,10 +377,31 @@ export function initAttemptBridge({
 
   window.__workspaceAttemptPreview = previewAttempt;
 
+  async function saveAndPause() {
+    flushAnswerPersist?.();
+    flushSaveNow?.();
+    await attemptSession.flushDraftNow();
+    showToast?.("풀이를 저장했습니다. 같은 시험지를 다시 열면 이어서 풀 수 있습니다.");
+  }
+
   window.addEventListener("beforeunload", (e) => {
     if (attemptSession.isDirty()) {
+      flushAnswerPersist?.();
+      flushSaveNow?.();
       e.preventDefault();
       e.returnValue = "";
+    }
+  });
+
+  window.addEventListener("pagehide", () => {
+    flushAnswerPersist?.();
+    flushSaveNow?.();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      flushAnswerPersist?.();
+      flushSaveNow?.();
     }
   });
 
@@ -373,6 +423,8 @@ export function initAttemptBridge({
       const ctx = getDocumentContext();
       return ctx ? startFreshAttempt(ctx, opts) : Promise.resolve();
     },
+    saveAndPause,
+    hasInProgressWork: () => hasInProgressWorkspace(getActiveWorkspace(), state),
     getLoadedAttemptId: () => attemptSession.getLoadedAttemptId(),
     setActiveProblem(problem) {
       activeProblem = problem || null;

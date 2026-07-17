@@ -126,6 +126,34 @@ body {
   counter-reset: step;
 }
 
+.ws-usage-guide-note {
+  margin: 4px 0 0;
+  font-size: 0.72rem;
+  color: var(--ws-muted);
+}
+
+.ws-resume-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #e8f4ec;
+  border-bottom: 1px solid #b8dcc4;
+  color: #1e5631;
+  font-size: 0.78rem;
+}
+
+.ws-resume-banner[hidden] {
+  display: none !important;
+}
+
+.ws-resume-banner-close {
+  flex-shrink: 0;
+  min-width: 1.75rem;
+  padding: 2px 6px;
+}
+
 .ws-toolbar-group {
   display: flex;
   align-items: center;
@@ -243,6 +271,13 @@ body {
   flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
+}
+
+.ws-exam-pane-toolbar {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  background: var(--ws-surface);
+  border-bottom: 1px solid var(--ws-border);
 }
 
 .ws-header-exam-tools[hidden] {
@@ -465,11 +500,13 @@ body {
 }
 
 .ws-pane-exam {
-  flex: 0 0 40%;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .ws-pane-answer {
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .ws-pane-answer .ws-pane-scroll {
@@ -2241,6 +2278,7 @@ body.ws-modal-open {
 .answer-sheet-page {
   width: var(--answer-page-width, 794px);
   max-width: var(--answer-page-width, 794px);
+  flex-shrink: 0;
   height: var(--answer-page-height, 1123px);
   min-height: var(--answer-page-height, 1123px);
   margin: 0 auto;
@@ -2427,6 +2465,87 @@ body.ws-modal-open {
 .ws-type-unit {
   font-size: 0.68rem;
   color: var(--ws-muted);
+}
+
+.answer-doc-body.is-annotation-mode .answer-doc-editor {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ws-answer-scroll.is-annotation-mode {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.answer-doc-body.is-annotation-mode {
+  cursor: inherit;
+}
+
+.answer-doc-body .draw-layer,
+.answer-doc-body .draw-interact-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.answer-doc-body .draw-layer {
+  z-index: 5;
+}
+
+.answer-doc-body .draw-interact-layer {
+  z-index: 6;
+}
+
+.ws-symbol-panel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: min(100%, 520px);
+}
+
+.ws-symbol-label {
+  font-size: 0.72rem;
+  color: var(--ws-muted);
+  white-space: nowrap;
+}
+
+.ws-symbol-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.ws-symbol-btn {
+  min-width: 1.55rem;
+  height: 1.55rem;
+  padding: 0 3px;
+  border: 1px solid var(--ws-border);
+  border-radius: 4px;
+  background: var(--ws-surface);
+  color: var(--ws-text);
+  font-size: 0.82rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ws-symbol-btn:hover {
+  background: var(--ws-accent-soft);
+  border-color: var(--ws-accent);
+}
+
+.ws-circled-number-hint {
+  font-size: 0.68rem;
+  color: var(--ws-muted);
+  white-space: nowrap;
+}
+
+.ws-circled-number-hint code {
+  font-size: 0.9em;
+  background: #f3f4f6;
+  padding: 1px 4px;
+  border-radius: 3px;
 }
 
 .ws-number-hint {
