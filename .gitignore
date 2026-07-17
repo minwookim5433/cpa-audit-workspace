@@ -1,11 +1,12 @@
 node_modules/
 .env
-.env.local
-.env.*.local
+.env.*
 !.env.example
 backup/.env
+*.log
 .DS_Store
 Thumbs.db
+uploads/
+test-data/
 *.pdf
-*.log
 .cursor/

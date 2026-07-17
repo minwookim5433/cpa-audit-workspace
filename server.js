@@ -32,7 +32,14 @@ const imageUpload = multer({
 });
 
 app.use(express.json({ limit: "5mb" }));
+
+const nodeModulesDir = path.join(__dirname, "node_modules");
+app.use("/node_modules", express.static(nodeModulesDir));
 app.use(express.static(path.join(__dirname)));
+
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
 
 const SYSTEM_PROMPT = `당신은 감사인이 CPA 사례형 문제·실무 감사업무를 수행할 때 사용하는 AI Audit Workbench의 보조 도구입니다.
 기업을 자동으로 진단하거나 CPA 정답·모범답안·최종감사의견을 작성하지 마세요.
@@ -1730,6 +1737,6 @@ app.post("/api/answer-coach", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`CPA Answer Coach Workspace running at http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`CPA Answer Coach Workspace running on port ${PORT}`);
 });
