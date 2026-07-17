@@ -1,5 +1,5 @@
 /**
- * 답안 동그라미 번호 — 타이핑 변환 / 보조 삽입
+ * 답안 동그라미 번호 — 세션 기반 삽입
  */
 
 const CIRCLED = [
@@ -7,16 +7,18 @@ const CIRCLED = [
   "⑪", "⑫", "⑬", "⑭", "⑮", "⑯", "⑰", "⑱", "⑲", "⑳",
 ];
 
-const CIRCLED_RE = /^[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]$/;
+const CIRCLED_RE = /[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/g;
+
+export const CIRCLED_MAX = 20;
+export const CIRCLED_LIMIT_MESSAGE = "동그라미 번호는 ⑳까지 입력할 수 있습니다.";
 
 export function formatCircledNumber(n) {
-  const num = Math.max(1, Math.min(20, Number(n) || 1));
+  const num = Math.max(1, Math.min(CIRCLED_MAX, Number(n) || 1));
   return CIRCLED[num - 1] || `${num}`;
 }
 
-/** @deprecated use formatCircledNumber */
-export function formatNumberToken(format, n) {
-  if (format === "circled" || !format) return formatCircledNumber(n);
+/** @deprecated */
+export function formatNumberToken(_format, n) {
   return formatCircledNumber(n);
 }
 
@@ -24,7 +26,7 @@ export function parseTypedCircledPattern(lineText) {
   const m = String(lineText || "").match(/^(\d{1,2})\)$/);
   if (!m) return null;
   const num = Number(m[1]);
-  if (num < 1 || num > 20) return null;
+  if (num < 1 || num > CIRCLED_MAX) return null;
   return num;
 }
 
@@ -36,82 +38,101 @@ export function getLeadingWhitespace(text) {
 export function isCircledOnlyLine(text) {
   const trimmed = String(text || "").trim();
   if (!trimmed) return true;
-  return CIRCLED_RE.test(trimmed);
+  return /^[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]$/.test(trimmed);
 }
 
+/** @deprecated */
 export function nextCircledAfter(text) {
   const trimmed = String(text || "").trim();
   for (let i = 0; i < CIRCLED.length; i++) {
     if (trimmed.startsWith(CIRCLED[i])) {
-      return i + 2 <= 20 ? i + 2 : 20;
+      return i + 2 <= CIRCLED_MAX ? i + 2 : CIRCLED_MAX;
     }
   }
   return 1;
 }
 
-export function renderNumberPopup(popupEl, { onInsert, onAutoIncrementChange, getAutoIncrement, onClose }) {
-  if (!popupEl) return;
-  popupEl.innerHTML = `
-    <div class="ws-number-popup-inner">
-      <header class="ws-number-popup-header">
-        <strong>번호 도구</strong>
-        <button type="button" class="ws-btn ws-number-popup-close" data-num-close>✕</button>
-      </header>
-      <div class="ws-number-popup-body">
-        <p class="ws-number-hint">타이핑: <code>1)</code> + Space → ①</p>
-        <label class="ws-number-field ws-number-toggle">
-          <input type="checkbox" id="ws-circled-auto" />
-          <span>동그라미 번호 자동 증가</span>
-        </label>
-        <label class="ws-number-field">
-          <span>번호 직접 삽입</span>
-          <div class="ws-number-insert-row">
-            <input type="number" id="ws-num-start" min="1" max="20" value="1" class="ws-input-short" />
-            <div class="ws-number-preview" id="ws-num-preview">①</div>
-            <button type="button" id="ws-num-insert-one" class="ws-btn ws-btn-primary">삽입</button>
-          </div>
-        </label>
-      </div>
-    </div>`;
+export function getLastCircledNumberInText(text) {
+  let last = 0;
+  const matches = String(text || "").match(CIRCLED_RE);
+  if (!matches) return 0;
+  for (const ch of matches) {
+    const idx = CIRCLED.indexOf(ch);
+    if (idx >= 0) last = idx + 1;
+  }
+  return last;
+}
 
-  const startEl = popupEl.querySelector("#ws-num-start");
-  const previewEl = popupEl.querySelector("#ws-num-preview");
-  const autoEl = popupEl.querySelector("#ws-circled-auto");
+export function getSessionTextFromPages(pages, session, plainTextFromHtml) {
+  const list = Array.isArray(pages) ? pages : [];
+  if (!session) {
+    return list.map((page) => plainTextFromHtml(page)).join("\n");
+  }
+  let out = "";
+  for (let i = session.startPage; i < list.length; i++) {
+    let text = plainTextFromHtml(list[i] ?? "");
+    if (i === session.startPage) {
+      text = text.slice(Math.max(0, session.startOffset || 0));
+    }
+    if (out) out += "\n";
+    out += text;
+  }
+  return out;
+}
 
-  const updatePreview = () => {
-    const n = Number(startEl?.value) || 1;
-    if (previewEl) previewEl.textContent = formatCircledNumber(n);
-  };
+export function computeNextCircledNumber(pages, session, plainTextFromHtml) {
+  const sessionText = getSessionTextFromPages(pages, session, plainTextFromHtml);
+  const last = getLastCircledNumberInText(sessionText);
+  return last + 1;
+}
 
-  startEl?.addEventListener("input", updatePreview);
-  updatePreview();
+export function findPreviousNumberedLineLeading(text, caret) {
+  const before = String(text || "").slice(0, Math.max(0, caret));
+  const lines = before.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    const trimmed = line.trimStart();
+    if (/^[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/.test(trimmed)) {
+      return getLeadingWhitespace(line);
+    }
+  }
+  return "";
+}
 
-  autoEl?.addEventListener("change", () => {
-    onAutoIncrementChange?.(Boolean(autoEl.checked));
-  });
+export function buildCircledInsertPlan(text, caret, num) {
+  const circled = formatCircledNumber(num);
+  const safeCaret = Math.max(0, Math.min(caret, String(text || "").length));
+  const before = String(text || "").slice(0, safeCaret);
+  const after = String(text || "").slice(safeCaret);
+  const lineStart = Math.max(0, before.lastIndexOf("\n") + 1);
+  const lineBeforeCaret = before.slice(lineStart);
+  const userLeading = getLeadingWhitespace(lineBeforeCaret);
+  const atLineStart = lineBeforeCaret.trim().length === 0;
 
-  popupEl.querySelector("#ws-num-insert-one")?.addEventListener("click", () => {
-    onInsert?.(Number(startEl?.value) || 1);
-    onClose?.();
-  });
+  if (atLineStart) {
+    const prevLeading = findPreviousNumberedLineLeading(text, safeCaret);
+    const leading = userLeading || prevLeading;
+    const insertText = `${leading}${circled} `;
+    return {
+      insertAt: lineStart,
+      deleteCount: lineBeforeCaret.length,
+      insertText,
+      newCaret: lineStart + insertText.length,
+    };
+  }
 
-  popupEl.querySelector("[data-num-close]")?.addEventListener("click", () => onClose?.());
-
-  popupEl._syncAutoIncrement = () => {
-    if (autoEl) autoEl.checked = Boolean(getAutoIncrement?.());
+  const insertText = `${circled} `;
+  return {
+    insertAt: safeCaret,
+    deleteCount: 0,
+    insertText,
+    newCaret: safeCaret + insertText.length,
   };
 }
 
-export function showNumberPopup(popupEl, anchorRect) {
-  if (!popupEl) return;
-  popupEl.hidden = false;
-  popupEl._syncAutoIncrement?.();
-  const left = Math.min(anchorRect?.left ?? 100, window.innerWidth - 280);
-  const top = (anchorRect?.bottom ?? 100) + 6;
-  popupEl.style.left = `${Math.max(8, left)}px`;
-  popupEl.style.top = `${top}px`;
-}
-
-export function hideNumberPopup(popupEl) {
-  if (popupEl) popupEl.hidden = true;
+export function createCircledSession(pageIndex, caretOffset) {
+  return {
+    startPage: Math.max(0, pageIndex),
+    startOffset: Math.max(0, caretOffset || 0),
+  };
 }

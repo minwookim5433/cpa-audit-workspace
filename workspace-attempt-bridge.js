@@ -156,7 +156,7 @@ export function initAttemptBridge({
     ws.attemptMemo = copyMemo && latest ? latest.memo : "";
     ws.attemptTags = copyTags && latest ? [...(latest.tags || [])] : [];
     ws.attemptStatus = "draft";
-    ws.circledAutoIncrement = null;
+    ws.circledNumberSession = null;
     if (copyAnnotations && latest) {
       ws.drawAnnotations = JSON.parse(JSON.stringify(latest.annotations || []));
     } else {

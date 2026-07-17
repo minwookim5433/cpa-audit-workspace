@@ -41,12 +41,7 @@ import {
   BUTTON_ZOOM_STEP,
 } from "./workspace-exam-pan-zoom.js";
 import { createFloatingToolbar, updateFloatingToolUi } from "./workspace-floating-toolbar.js";
-import {
-  formatCircledNumber,
-  renderNumberPopup,
-  showNumberPopup,
-  hideNumberPopup,
-} from "./workspace-numbering.js";
+import { createFloatingTimer, loadTimerPosition } from "./workspace-floating-timer.js";
 import { createPreviewController } from "./workspace-answer-preview.js";
 import { stripFormatSpansFromSheet, hasMeaningfulAnswerContent, normalizeAnswerText, plainTextFromHtml } from "./workspace-answer-format.js";
 import { saveExamAttempt, getExamAttempt } from "./workspace-exam-attempts.js";
@@ -68,7 +63,8 @@ const VIEW_PRESETS = {
   answer: 0.35,
 };
 const MIN_EXAM_RATIO = 0.35;
-const MIN_ANSWER_RATIO = 0.3;
+const MIN_ANSWER_RATIO = 0.35;
+const DEFAULT_TIMER_DURATION = 120 * 60;
 
 const pdfDocs = {};
 
@@ -90,6 +86,9 @@ const state = {
   answerSheet: createEmptyAnswerSheet(),
   answerSheetPage: 0,
   timerSeconds: 0,
+  timerDurationSeconds: DEFAULT_TIMER_DURATION,
+  timerRemainingSeconds: DEFAULT_TIMER_DURATION,
+  timerPos: loadTimerPosition(),
   searchQuery: "",
   searchResults: [],
   searchIdx: 0,
@@ -108,7 +107,7 @@ const state = {
   floatToolbarVertical: false,
   listMode: null,
   caretOffset: 0,
-  circledAutoIncrement: null,
+  circledNumberSession: null,
   answerFontSize: DEFAULT_ANSWER_FONT_SIZE,
   answerLetterSpacing: DEFAULT_ANSWER_LETTER_SPACING,
   sheetTemplate: null,
@@ -126,7 +125,7 @@ let currentExamAttempt = null;
 let attemptBridge = null;
 let floatToolbar = null;
 let floatToolbarReady = false;
-let numberPopupReady = false;
+let floatingTimer = null;
 
 const els = {};
 
@@ -170,8 +169,8 @@ function cacheElements() {
     previewModal: "ws-preview-modal",
     mobileTabs: "ws-mobile-tabs",
     floatToolbar: "ws-float-toolbar",
-    numberPopup: "ws-number-popup",
     viewModes: "ws-view-modes",
+    floatingTimer: "ws-floating-timer",
   };
   Object.entries(map).forEach(([key, id]) => {
     els[key] = document.getElementById(id);
@@ -250,7 +249,9 @@ function createWorkspace() {
     answerRedoStack: [],
     listMode: null,
     caretOffset: 0,
-    circledAutoIncrement: null,
+    circledNumberSession: null,
+    timerDurationSeconds: DEFAULT_TIMER_DURATION,
+    timerRemainingSeconds: DEFAULT_TIMER_DURATION,
     answerFontSize: DEFAULT_ANSWER_FONT_SIZE,
     answerLetterSpacing: DEFAULT_ANSWER_LETTER_SPACING,
     attemptMemo: "",
@@ -266,7 +267,32 @@ function ensureWorkspace(fingerprint) {
   const ws = state.workspaces[fingerprint];
   if (!ws.drawUndoActions) ws.drawUndoActions = [];
   if (!ws.drawRedoActions) ws.drawRedoActions = [];
+  if (ws.timerDurationSeconds == null) {
+    const elapsed = Number(ws.timerSeconds) || 0;
+    ws.timerDurationSeconds = DEFAULT_TIMER_DURATION;
+    ws.timerRemainingSeconds = Math.max(0, DEFAULT_TIMER_DURATION - elapsed);
+  }
+  if (ws.timerRemainingSeconds == null) ws.timerRemainingSeconds = ws.timerDurationSeconds;
   return ws;
+}
+
+function getTimerElapsedSeconds() {
+  const duration = state.timerDurationSeconds ?? DEFAULT_TIMER_DURATION;
+  const remaining = state.timerRemainingSeconds ?? duration;
+  return Math.max(0, duration - remaining);
+}
+
+function syncTimerToWorkspace(ws) {
+  if (!ws) return;
+  ws.timerDurationSeconds = state.timerDurationSeconds ?? DEFAULT_TIMER_DURATION;
+  ws.timerRemainingSeconds = state.timerRemainingSeconds ?? ws.timerDurationSeconds;
+  ws.timerSeconds = getTimerElapsedSeconds();
+}
+
+function applyTimerFromWorkspace(ws) {
+  state.timerDurationSeconds = ws?.timerDurationSeconds ?? DEFAULT_TIMER_DURATION;
+  state.timerRemainingSeconds = ws?.timerRemainingSeconds ?? state.timerDurationSeconds;
+  state.timerSeconds = getTimerElapsedSeconds();
 }
 
 function syncFromSlot() {
@@ -286,6 +312,8 @@ function syncFromSlot() {
     state.answerSheet = createEmptyAnswerSheet();
     state.answerSheetPage = 0;
     state.timerSeconds = 0;
+    state.timerDurationSeconds = DEFAULT_TIMER_DURATION;
+    state.timerRemainingSeconds = DEFAULT_TIMER_DURATION;
     state.searchQuery = "";
     state.searchResults = [];
     state.searchIdx = 0;
@@ -310,9 +338,10 @@ function syncFromSlot() {
   state.answerSheet = stripFormatSpansFromSheet(normalizeAnswerPages(ws.answerSheet));
   state.answerSheetPage = ws.answerSheetPage;
   state.timerSeconds = ws.timerSeconds;
+  applyTimerFromWorkspace(ws);
   state.listMode = null;
   state.caretOffset = ws.caretOffset ?? 0;
-  state.circledAutoIncrement = ws.circledAutoIncrement || null;
+  state.circledNumberSession = ws.circledNumberSession || null;
   state.answerFontSize = clampAnswerFontSize(ws.answerFontSize ?? DEFAULT_ANSWER_FONT_SIZE);
   state.answerLetterSpacing = clampAnswerLetterSpacing(
     ws.answerLetterSpacing ?? DEFAULT_ANSWER_LETTER_SPACING
@@ -338,10 +367,10 @@ function syncToSlot() {
   ws.drawAnnotations = [...state.drawAnnotations];
   ws.answerSheet = stripFormatSpansFromSheet(normalizeAnswerPages(state.answerSheet));
   ws.answerSheetPage = state.answerSheetPage;
-  ws.timerSeconds = state.timerSeconds;
+  syncTimerToWorkspace(ws);
   ws.listMode = null;
   ws.caretOffset = state.caretOffset;
-  ws.circledAutoIncrement = state.circledAutoIncrement || null;
+  ws.circledNumberSession = state.circledNumberSession || null;
   ws.answerFontSize = clampAnswerFontSize(state.answerFontSize);
   ws.answerLetterSpacing = clampAnswerLetterSpacing(state.answerLetterSpacing);
   ws.searchQuery = state.searchQuery;
@@ -490,6 +519,9 @@ function saveSession() {
       mobileTab: state.mobileTab,
       hasTemplate: Boolean(state.sheetTemplate?.dataUrl),
       timerRunning: state.timerRunning,
+      timerDurationSeconds: state.timerDurationSeconds,
+      timerRemainingSeconds: state.timerRemainingSeconds,
+      timerPos: state.timerPos,
       drawTool: state.drawTool,
       lineColor: state.lineColor,
       highlightColor: state.highlightColor,
@@ -1184,7 +1216,7 @@ function initAnswerDocument() {
         sheet: state.answerSheet,
         pageIndex: state.answerSheetPage,
         caretOffset: state.caretOffset,
-        circledAutoIncrement: state.circledAutoIncrement,
+        circledNumberSession: state.circledNumberSession,
         answerFontSize: state.answerFontSize,
         answerLetterSpacing: state.answerLetterSpacing,
         editStarted: false,
@@ -1194,7 +1226,7 @@ function initAnswerDocument() {
         if (patch.sheet) state.answerSheet = patch.sheet;
         if (patch.pageIndex != null) state.answerSheetPage = patch.pageIndex;
         if (patch.caretOffset != null) state.caretOffset = patch.caretOffset;
-        if (patch.circledAutoIncrement !== undefined) state.circledAutoIncrement = patch.circledAutoIncrement;
+        if (patch.circledNumberSession !== undefined) state.circledNumberSession = patch.circledNumberSession;
         syncAnswerPageToState();
       },
       onChange: () => {
@@ -1298,7 +1330,7 @@ function collectSubmissionStats() {
   return {
     examId: state.pdfFingerprint || "",
     docTitle: state.docTitle || state.pdfName || "시험지",
-    timerSeconds: state.timerSeconds,
+    timerSeconds: getTimerElapsedSeconds(),
     answerSheet: [...sheet],
     fontSize: state.answerFontSize,
     letterSpacing: state.answerLetterSpacing,
@@ -1380,17 +1412,20 @@ async function finalizeExamEnd() {
 function retryExamFromResult() {
   clearInterval(timerInterval);
   state.timerRunning = false;
+  state.timerRemainingSeconds = state.timerDurationSeconds ?? DEFAULT_TIMER_DURATION;
   state.timerSeconds = 0;
   state.answerSheet = createEmptyAnswerSheet();
   state.answerSheetPage = 0;
   state.caretOffset = 0;
+  state.circledNumberSession = null;
   const ws = getActiveWorkspace();
   if (ws) {
+    ws.timerRemainingSeconds = state.timerRemainingSeconds;
     ws.timerSeconds = 0;
     ws.answerSheet = createEmptyAnswerSheet();
     ws.answerSheetPage = 0;
     ws.caretOffset = 0;
-    ws.circledAutoIncrement = null;
+    ws.circledNumberSession = null;
   }
   setupAnswerEditor();
   updateTimerDisplay();
@@ -1400,14 +1435,6 @@ function retryExamFromResult() {
 }
 
 function initExamEndFlow() {
-  document.getElementById("ws-exam-end-btn")?.addEventListener("click", () => {
-    if (!state.pdfFingerprint) {
-      showToast("시험지를 먼저 추가해주세요.");
-      return;
-    }
-    showExamEndModal();
-  });
-
   document.getElementById("ws-exam-end-continue")?.addEventListener("click", () => {
     const modal = document.getElementById("ws-exam-end-modal");
     if (modal) modal.hidden = true;
@@ -1486,35 +1513,109 @@ function initFloatingToolbar() {
   });
 }
 
-function initNumberPopup() {
-  if (!els.numberPopup || numberPopupReady) return;
-  renderNumberPopup(els.numberPopup, {
-    onInsert: (startNum) => {
-      const token = `${formatCircledNumber(startNum)} `;
-      answerDocController?.insertAtSavedRange(token);
-      answerDocController?.setNumberMenuOpen(false);
-      hideNumberPopup(els.numberPopup);
+function initFloatingTimerWidget() {
+  if (floatingTimer) return;
+  const root = document.getElementById("ws-floating-timer");
+  if (!root) return;
+
+  floatingTimer = createFloatingTimer({
+    rootEl: root,
+    dragHandleEl: document.getElementById("ws-floating-timer-drag"),
+    displayEl: document.getElementById("ws-timer-display"),
+    startBtn: document.getElementById("ws-timer-start"),
+    resetBtn: document.getElementById("ws-timer-reset"),
+    settingsBtn: document.getElementById("ws-timer-settings"),
+    settingsPanelEl: document.getElementById("ws-timer-settings-panel"),
+    presetButtons: [...root.querySelectorAll("[data-timer-minutes]")],
+    customInputEl: document.getElementById("ws-timer-custom-min"),
+    customApplyBtn: document.getElementById("ws-timer-custom-apply"),
+    examEndBtn: document.getElementById("ws-exam-end-btn"),
+    getState: () => ({
+      timerRunning: state.timerRunning,
+      timerDurationSeconds: state.timerDurationSeconds,
+      timerRemainingSeconds: state.timerRemainingSeconds,
+      timerPos: state.timerPos,
+    }),
+    setState: (patch) => {
+      if (patch.timerPos) state.timerPos = patch.timerPos;
     },
-    onAutoIncrementChange: (enabled) => {
-      state.circledAutoIncrement = enabled
-        ? { active: true, nextNum: 1, prevEnterEmpty: false }
-        : null;
-      syncAnswerPageToState();
-      scheduleSave();
+    onStartPause: () => toggleTimerRunning(),
+    onReset: () => resetTimerCountdown(),
+    onDurationChange: (minutes) => setTimerDurationMinutes(minutes),
+    onExamEnd: () => {
+      if (!state.pdfFingerprint) {
+        showToast("시험지를 먼저 추가해주세요.");
+        return;
+      }
+      showExamEndModal();
     },
-    getAutoIncrement: () => Boolean(state.circledAutoIncrement?.active),
-    onClose: () => {
-      answerDocController?.setNumberMenuOpen(false);
-      hideNumberPopup(els.numberPopup);
-    },
+    onSave: () => scheduleSave(),
   });
-  numberPopupReady = true;
 }
 
-function openNumberMenu(anchorRect) {
-  initNumberPopup();
-  answerDocController?.setNumberMenuOpen(true);
-  showNumberPopup(els.numberPopup, anchorRect);
+function setTimerDurationMinutes(minutes) {
+  const clamped = Math.max(1, Math.min(300, Number(minutes) || 120));
+  const seconds = clamped * 60;
+  clearInterval(timerInterval);
+  state.timerRunning = false;
+  state.timerDurationSeconds = seconds;
+  state.timerRemainingSeconds = seconds;
+  state.timerSeconds = 0;
+  syncTimerToWorkspace(getActiveWorkspace());
+  updateTimerDisplay();
+  scheduleSave();
+}
+
+function toggleTimerRunning() {
+  if (state.timerRunning) {
+    pauseTimer();
+    floatingTimer?.refreshDisplay();
+    return;
+  }
+  if ((state.timerRemainingSeconds ?? 0) <= 0) {
+    state.timerRemainingSeconds = state.timerDurationSeconds ?? DEFAULT_TIMER_DURATION;
+  }
+  state.timerRunning = true;
+  timerInterval = setInterval(() => {
+    if (state.timerRemainingSeconds <= 0) {
+      pauseTimer();
+      floatingTimer?.refreshDisplay();
+      return;
+    }
+    state.timerRemainingSeconds -= 1;
+    state.timerSeconds = getTimerElapsedSeconds();
+    syncTimerToWorkspace(getActiveWorkspace());
+    updateTimerDisplay();
+    if (state.timerRemainingSeconds % 30 === 0) scheduleSave();
+  }, 1000);
+}
+
+function resetTimerCountdown() {
+  clearInterval(timerInterval);
+  state.timerRunning = false;
+  state.timerRemainingSeconds = state.timerDurationSeconds ?? DEFAULT_TIMER_DURATION;
+  state.timerSeconds = 0;
+  syncTimerToWorkspace(getActiveWorkspace());
+  updateTimerDisplay();
+  scheduleSave();
+}
+
+function bindCircledNumberButton(buttonId, resetSession) {
+  const btn = document.getElementById(buttonId);
+  btn?.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    answerDocController?.flushPersist?.();
+    answerDocController?.saveAnswerSelection();
+  });
+  btn?.addEventListener("click", () => {
+    const result = answerDocController?.insertCircledNumber({ resetSession });
+    if (result?.ok) {
+      state.circledNumberSession = result.session;
+      syncAnswerPageToState();
+      updateRowStats();
+      scheduleSave();
+    }
+  });
 }
 
 function undoLastDrawAnnotation() {
@@ -1555,7 +1656,7 @@ function syncAnswerPageToState() {
     ws.answerSheet = stripFormatSpansFromSheet(normalizeAnswerPages(state.answerSheet));
     ws.answerSheetPage = state.answerSheetPage;
     ws.caretOffset = state.caretOffset;
-    ws.circledAutoIncrement = state.circledAutoIncrement || null;
+    ws.circledNumberSession = state.circledNumberSession || null;
     ws.answerFontSize = clampAnswerFontSize(state.answerFontSize);
     ws.answerLetterSpacing = clampAnswerLetterSpacing(state.answerLetterSpacing);
   }
@@ -1809,10 +1910,18 @@ function switchSidebarPanel(panelId) {
 }
 
 function updateTimerDisplay() {
+  state.timerSeconds = getTimerElapsedSeconds();
   if (!els.timerDisplay) return;
-  const m = Math.floor(state.timerSeconds / 60);
-  const s = state.timerSeconds % 60;
-  els.timerDisplay.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  const remaining = state.timerRemainingSeconds ?? state.timerDurationSeconds ?? DEFAULT_TIMER_DURATION;
+  const h = Math.floor(remaining / 3600);
+  const m = Math.floor((remaining % 3600) / 60);
+  const s = remaining % 60;
+  els.timerDisplay.textContent = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  const startBtn = document.getElementById("ws-timer-start");
+  if (startBtn) {
+    startBtn.textContent = state.timerRunning ? "⏸" : "▶";
+    startBtn.title = state.timerRunning ? "일시정지" : "시작";
+  }
 }
 
 function initPreviewModal() {
@@ -1892,6 +2001,9 @@ async function restoreSession() {
     state.viewMode = data.viewMode || "equal";
     state.mobileTab = data.mobileTab || "exam";
     state.timerRunning = Boolean(data.timerRunning);
+    state.timerDurationSeconds = data.timerDurationSeconds ?? DEFAULT_TIMER_DURATION;
+    state.timerRemainingSeconds = data.timerRemainingSeconds ?? state.timerDurationSeconds;
+    state.timerPos = data.timerPos || loadTimerPosition();
     const savedTool = data.drawTool || TOOLS.view;
     state.drawTool = savedTool === "cursor" ? TOOLS.view : savedTool;
     if (![TOOLS.view, TOOLS.underline, TOOLS.highlighter, TOOLS.pen, TOOLS.eraser].includes(state.drawTool)) {
@@ -1938,8 +2050,9 @@ async function restoreSession() {
     applyPanelRatio(state.panelRatio);
     setMobileTab(state.mobileTab);
     initFloatingToolbar();
-    initNumberPopup();
+    initFloatingTimerWidget();
     updateDrawToolUi();
+    updateTimerDisplay();
     renderDocSelect();
     renderPdfManageList();
 
@@ -2133,13 +2246,8 @@ function bindEvents() {
   bindGlobalTypographyControl("ws-font-size-range", "ws-font-size-input", "fontSize");
   bindGlobalTypographyControl("ws-letter-spacing-range", "ws-letter-spacing-input", "letterSpacing");
 
-  document.getElementById("ws-number")?.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    answerDocController?.flushPersist?.();
-    answerDocController?.saveAnswerSelection();
-    const rect = e.currentTarget.getBoundingClientRect();
-    openNumberMenu(rect);
-  });
+  bindCircledNumberButton("ws-number", false);
+  bindCircledNumberButton("ws-number-from-one", true);
 
   document.getElementById("ws-del-line")?.addEventListener("click", () => {
     answerDocController?.deleteCurrentLine();
@@ -2162,13 +2270,6 @@ function bindEvents() {
     previewController?.open();
   });
 
-  document.addEventListener("mousedown", (e) => {
-    if (!els.numberPopup?.hidden && !e.target.closest("#ws-number-popup") && !e.target.closest("#ws-number")) {
-      answerDocController?.setNumberMenuOpen(false);
-      hideNumberPopup(els.numberPopup);
-    }
-  });
-
   initExamEndFlow();
   initExamResultModal();
 
@@ -2184,32 +2285,6 @@ function bindEvents() {
 
   document.querySelectorAll(".ws-tab-btn").forEach((btn) => {
     btn.addEventListener("click", () => setMobileTab(btn.dataset.tab));
-  });
-
-  document.getElementById("ws-timer-start")?.addEventListener("click", () => {
-    if (state.timerRunning) return;
-    state.timerRunning = true;
-    timerInterval = setInterval(() => {
-      state.timerSeconds++;
-      const ws = getActiveWorkspace();
-      if (ws) ws.timerSeconds = state.timerSeconds;
-      updateTimerDisplay();
-      if (state.timerSeconds % 30 === 0) scheduleSave();
-    }, 1000);
-  });
-  document.getElementById("ws-timer-pause")?.addEventListener("click", () => {
-    state.timerRunning = false;
-    clearInterval(timerInterval);
-    scheduleSave();
-  });
-  document.getElementById("ws-timer-reset")?.addEventListener("click", () => {
-    clearInterval(timerInterval);
-    state.timerRunning = false;
-    state.timerSeconds = 0;
-    const ws = getActiveWorkspace();
-    if (ws) ws.timerSeconds = 0;
-    updateTimerDisplay();
-    scheduleSave();
   });
 
   els.previewBtn?.addEventListener("click", () => {
@@ -2248,10 +2323,9 @@ export async function initWorkspace() {
   bindVerticalResizer();
   initPreviewModal();
   initFloatingToolbar();
-  initNumberPopup();
+  initFloatingTimerWidget();
   bindEvents();
   applyViewMode("equal");
-  switchSidebarPanel("timer");
   updateDrawToolUi();
 
   attemptBridge = initAttemptBridge({
@@ -2276,6 +2350,8 @@ export async function initWorkspace() {
   if (VIEW_PRESETS[state.viewMode]) applyPanelRatio(VIEW_PRESETS[state.viewMode]);
   else applyPanelRatio(state.panelRatio);
   floatToolbar?.restore();
+  floatingTimer?.restore();
+  updateTimerDisplay();
   applyAnswerTypography(getAnswerTypography(), { save: false });
 }
 
@@ -2292,6 +2368,12 @@ if (typeof window !== "undefined") {
       clones: answerDocController?.cloneAllSheets?.() || [],
     };
   };
+
+  window.__workspaceTimer = () => ({
+    running: state.timerRunning,
+    remaining: state.timerRemainingSeconds,
+    duration: state.timerDurationSeconds,
+  });
 
   window.__workspaceExamUx = {
     getScale: () => state.scale,

@@ -11,9 +11,11 @@ import {
 import {
   formatCircledNumber,
   parseTypedCircledPattern,
-  isCircledOnlyLine,
-  nextCircledAfter,
-  getLeadingWhitespace,
+  CIRCLED_MAX,
+  CIRCLED_LIMIT_MESSAGE,
+  computeNextCircledNumber,
+  buildCircledInsertPlan,
+  createCircledSession,
 } from "./workspace-numbering.js";
 import {
   finalizeSheetClone,
@@ -118,7 +120,6 @@ export function createAnswerDocumentController({
   let undoStack = [];
   let redoStack = [];
   let isComposing = false;
-  let numberMenuOpen = false;
   let saveTimer = null;
   let boundEditor = null;
   let lastRenderedPageIndex = null;
@@ -190,7 +191,7 @@ export function createAnswerDocumentController({
   }
 
   function captureActiveAnswerSelection() {
-    if (isComposing || numberMenuOpen) return null;
+    if (isComposing) return null;
     const editor = getEditor();
     const selection = window.getSelection();
     if (!editor || !selection?.rangeCount) return null;
@@ -308,7 +309,6 @@ export function createAnswerDocumentController({
 
   function render(force = false) {
     if (!container) return;
-    if (numberMenuOpen && !force) return;
 
     const { pageIndex, caretOffset } = getState();
     const pageContent = getPageText(getState().sheet, pageIndex);
@@ -358,7 +358,7 @@ export function createAnswerDocumentController({
 
   function pushUndo() {
     const editor = getEditor();
-    if (editor && !isComposing && !numberMenuOpen) {
+    if (editor && !isComposing) {
       persistPageHtmlFromEditor();
     }
     const { sheet } = getState();
@@ -374,7 +374,7 @@ export function createAnswerDocumentController({
 
   function persistEditorToSheet(allowOverflow = true, force = false) {
     const editor = getEditor();
-    if (!editor || isComposing || (numberMenuOpen && !force)) return getState().sheet;
+    if (!editor || isComposing) return getState().sheet;
 
     stripFormatSpansFromNode(editor);
 
@@ -425,7 +425,7 @@ export function createAnswerDocumentController({
   function schedulePersist() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      if (!isComposing && !numberMenuOpen) {
+      if (!isComposing) {
         persistEditorToSheet(true);
       }
     }, SAVE_DEBOUNCE_MS);
@@ -480,7 +480,7 @@ export function createAnswerDocumentController({
 
     editor.addEventListener("keydown", (e) => {
       if (isComposing) return;
-      const { pageIndex, sheet, circledAutoIncrement } = getState();
+      const { pageIndex, sheet } = getState();
       const pages = normalizeAnswerPages(sheet);
 
       if (e.key === " " && tryConvertCircledOnSpace(editor)) {
@@ -496,33 +496,13 @@ export function createAnswerDocumentController({
         const caret = getCaretTextOffset(editor);
         const before = text.slice(0, caret);
         const after = text.slice(caret);
-        let insert = "\n";
-        let nextAuto = circledAutoIncrement;
-
-        if (circledAutoIncrement?.active) {
-          const lineStart = Math.max(0, before.lastIndexOf("\n") + 1);
-          const currentLine = before.slice(lineStart);
-
-          if (circledAutoIncrement.prevEnterEmpty && isCircledOnlyLine(currentLine)) {
-            nextAuto = null;
-          } else {
-            const leading = getLeadingWhitespace(currentLine);
-            const nextNum = circledAutoIncrement.nextNum ?? nextCircledAfter(currentLine);
-            const token = `${leading}${formatCircledNumber(nextNum)} `;
-            insert = `\n${token}`;
-            nextAuto = {
-              active: true,
-              nextNum: Math.min(20, nextNum + 1),
-              prevEnterEmpty: isCircledOnlyLine(currentLine),
-            };
-          }
-        }
+        const insert = "\n";
 
         const newText = before + insert + after;
         editor.textContent = newText;
         const newCaret = before.length + insert.length;
         setCaretTextOffset(editor, newCaret);
-        setState({ caretOffset: newCaret, circledAutoIncrement: nextAuto });
+        setState({ caretOffset: newCaret });
         schedulePersist();
         return;
       }
@@ -615,8 +595,64 @@ export function createAnswerDocumentController({
       const editor = getEditor();
       return editor ? countNonEmptyVisualLines(editor) : 0;
     },
-    setNumberMenuOpen(open) {
-      numberMenuOpen = Boolean(open);
+    setNumberMenuOpen(_open) {
+      // legacy no-op
+    },
+    insertCircledNumber({ resetSession = false } = {}) {
+      clearTimeout(saveTimer);
+      persistEditorToSheet(false, true);
+      const editor = getEditor();
+      if (!editor) return { ok: false };
+
+      editor.focus();
+      if (!restoreAnswerSelection()) {
+        const caret = savedCaretOffset ?? getState().caretOffset ?? editor.innerText.length;
+        setCaretTextOffset(editor, caret);
+      }
+
+      const { pageIndex, sheet, circledNumberSession } = getState();
+      const pages = normalizeAnswerPages(sheet);
+      const text = editor.innerText.replace(/\r/g, "");
+      const caret = getCaretTextOffset(editor);
+
+      let session = circledNumberSession;
+      if (resetSession || !session) {
+        session = createCircledSession(pageIndex, caret);
+      }
+
+      const nextNum = resetSession
+        ? 1
+        : !circledNumberSession
+          ? 1
+          : computeNextCircledNumber(pages, session, plainTextFromHtml);
+
+      if (nextNum > CIRCLED_MAX) {
+        showToast?.(CIRCLED_LIMIT_MESSAGE);
+        return { ok: false, reason: "limit" };
+      }
+
+      const plan = buildCircledInsertPlan(text, caret, nextNum);
+      pushUndo();
+
+      const before = text.slice(0, plan.insertAt);
+      const after = text.slice(plan.insertAt + plan.deleteCount);
+      const newText = before + plan.insertText + after;
+      editor.textContent = newText;
+      setCaretTextOffset(editor, plan.newCaret);
+
+      const updatedSession =
+        resetSession
+          ? createCircledSession(pageIndex, caret)
+          : !circledNumberSession
+            ? createCircledSession(pageIndex, plan.insertAt)
+            : session;
+
+      setState({
+        caretOffset: plan.newCaret,
+        circledNumberSession: updatedSession,
+      });
+      schedulePersist();
+      return { ok: true, num: nextNum, session: updatedSession };
     },
     insertAtSavedRange(text) {
       clearTimeout(saveTimer);
@@ -624,7 +660,6 @@ export function createAnswerDocumentController({
       pushUndo();
       const ok = insertTextAtRange(text);
       clearSavedSelection();
-      numberMenuOpen = false;
       if (ok) getEditor()?.focus();
       schedulePersist();
       return ok;

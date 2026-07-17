@@ -111,6 +111,55 @@
       </ol>
     </div>
 
+    <div class="ws-exam-toolbar" id="ws-exam-toolbar" aria-label="시험지 도구">
+      <div class="ws-exam-nav-row">
+        <button type="button" id="ws-prev-page" class="ws-btn ws-btn-fixed" disabled title="이전">◀</button>
+        <span class="ws-page-indicator">
+          <input type="number" id="ws-page-input" min="1" value="1" class="ws-input-short" />
+          <span id="ws-page-label">/ —</span>
+        </span>
+        <button type="button" id="ws-next-page" class="ws-btn ws-btn-fixed" disabled title="다음">▶</button>
+      </div>
+      <div class="ws-toolbar-divider"></div>
+      <div class="ws-exam-nav-row">
+        <button type="button" id="ws-zoom-out" class="ws-btn ws-btn-fixed" title="축소">−</button>
+        <span id="ws-zoom-label" class="ws-zoom-label-fixed">100%</span>
+        <button type="button" id="ws-zoom-in" class="ws-btn ws-btn-fixed" title="확대">+</button>
+        <button type="button" id="ws-fit-width" class="ws-btn ws-btn-fit" title="너비 맞춤">너비 맞춤</button>
+      </div>
+      <div class="ws-toolbar-divider"></div>
+      <div class="ws-exam-nav-row ws-exam-tools-row">
+        <button type="button" class="ws-exam-tool-btn ws-btn-fixed is-active" data-tool="view" title="보기">보기</button>
+        <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="underline" title="밑줄">밑줄</button>
+        <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="highlighter" title="형광펜">형광펜</button>
+        <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="pen" title="펜">펜</button>
+        <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="eraser" title="지우개">지우개</button>
+        <span id="ws-exam-color-wrap" class="ws-exam-color-wrap" hidden>
+          <select id="ws-exam-line-color" class="ws-tool-select" title="밑줄 색상">
+            <option value="red">빨강</option>
+            <option value="blue">파랑</option>
+            <option value="black">검정</option>
+          </select>
+          <select id="ws-exam-highlight-color" class="ws-tool-select" title="형광펜 색" hidden>
+            <option value="yellow">노랑</option>
+            <option value="green">초록</option>
+            <option value="pink">분홍</option>
+          </select>
+          <select id="ws-exam-pen-color" class="ws-tool-select" title="펜 색상" hidden>
+            <option value="red">빨강</option>
+            <option value="blue">파랑</option>
+            <option value="black">검정</option>
+          </select>
+          <select id="ws-exam-pen-width" class="ws-tool-select" title="펜 굵기" hidden>
+            <option value="thin">가늘게</option>
+            <option value="normal">보통</option>
+          </select>
+        </span>
+        <button type="button" id="ws-annot-undo" class="ws-btn ws-btn-fixed" title="주석 실행 취소">↶</button>
+        <button type="button" id="ws-annot-clear-page" class="ws-btn ws-btn-fixed" title="현재 페이지 주석 삭제">🗑</button>
+      </div>
+    </div>
+
     <div id="ws-doc-manage-modal" class="ws-modal ws-modal-sm" hidden>
       <div class="ws-modal-dialog">
         <header class="ws-modal-header">
@@ -125,7 +174,7 @@
     </div>
 
     <div class="ws-main">
-      <aside class="ws-sidebar">
+      <aside class="ws-sidebar mvp-hidden" hidden aria-hidden="true">
         <nav class="ws-sidebar-nav">
           <button type="button" class="ws-nav-btn is-active" data-panel="timer">⏱ 타이머</button>
           <button type="button" class="ws-nav-btn mvp-hidden" data-panel="bookmarks" hidden>🔖 북마크</button>
@@ -229,52 +278,6 @@
 
         <div class="ws-split-pane" id="ws-split-pane">
           <section class="ws-pane ws-pane-exam is-active" id="ws-pane-exam">
-            <div class="ws-exam-nav">
-              <div class="ws-exam-nav-row">
-                <button type="button" id="ws-prev-page" class="ws-btn ws-btn-fixed" disabled title="이전">◀</button>
-                <span class="ws-page-indicator">
-                  <input type="number" id="ws-page-input" min="1" value="1" class="ws-input-short" />
-                  <span id="ws-page-label">/ —</span>
-                </span>
-                <button type="button" id="ws-next-page" class="ws-btn ws-btn-fixed" disabled title="다음">▶</button>
-              </div>
-              <div class="ws-exam-nav-row">
-                <button type="button" id="ws-zoom-out" class="ws-btn ws-btn-fixed" title="축소">−</button>
-                <span id="ws-zoom-label" class="ws-zoom-label-fixed">100%</span>
-                <button type="button" id="ws-zoom-in" class="ws-btn ws-btn-fixed" title="확대">+</button>
-                <button type="button" id="ws-fit-width" class="ws-btn ws-btn-fit" title="너비 맞춤">너비 맞춤</button>
-              </div>
-              <div class="ws-exam-nav-row ws-exam-tools-row">
-                <button type="button" class="ws-exam-tool-btn ws-btn-fixed is-active" data-tool="view" title="보기">보기</button>
-                <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="underline" title="밑줄">밑줄</button>
-                <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="highlighter" title="형광펜">형광펜</button>
-                <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="pen" title="펜">펜</button>
-                <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="eraser" title="지우개">지우개</button>
-                <span id="ws-exam-color-wrap" class="ws-exam-color-wrap" hidden>
-                  <select id="ws-exam-line-color" class="ws-tool-select" title="밑줄 색상">
-                    <option value="red">빨강</option>
-                    <option value="blue">파랑</option>
-                    <option value="black">검정</option>
-                  </select>
-                  <select id="ws-exam-highlight-color" class="ws-tool-select" title="형광펜 색" hidden>
-                    <option value="yellow">노랑</option>
-                    <option value="green">초록</option>
-                    <option value="pink">분홍</option>
-                  </select>
-                  <select id="ws-exam-pen-color" class="ws-tool-select" title="펜 색상" hidden>
-                    <option value="red">빨강</option>
-                    <option value="blue">파랑</option>
-                    <option value="black">검정</option>
-                  </select>
-                  <select id="ws-exam-pen-width" class="ws-tool-select" title="펜 굵기" hidden>
-                    <option value="thin">가늘게</option>
-                    <option value="normal">보통</option>
-                  </select>
-                </span>
-                <button type="button" id="ws-annot-undo" class="ws-btn ws-btn-fixed" title="주석 실행 취소">↶</button>
-                <button type="button" id="ws-annot-clear-page" class="ws-btn ws-btn-fixed" title="현재 페이지 주석 삭제">🗑</button>
-              </div>
-            </div>
             <div class="ws-pane-scroll ws-exam-scroll" id="ws-exam">
               <div id="ws-exam-pages" class="ws-exam-pages"></div>
               <div id="ws-float-toolbar" class="ws-float-toolbar" hidden>
@@ -323,6 +326,7 @@
               </div>
               <div class="ws-toolbar-divider"></div>
               <button type="button" id="ws-number" class="ws-btn">번호</button>
+              <button type="button" id="ws-number-from-one" class="ws-btn">①부터</button>
               <button type="button" id="ws-del-line" class="ws-btn">줄 삭제</button>
               <button type="button" id="ws-answer-preview-btn" class="ws-btn">미리보기</button>
               <span id="ws-row-stats" class="ws-input-stats">0 / 25행 · 0 / 250행</span>
@@ -592,7 +596,29 @@
     </div>
   </div>
 
-  <div id="ws-number-popup" class="ws-number-popup" hidden></div>
+  <div id="ws-floating-timer" class="ws-floating-timer" aria-label="시험 타이머">
+    <div class="ws-floating-timer-drag" id="ws-floating-timer-drag" title="드래그하여 이동"></div>
+    <div class="ws-floating-timer-body">
+      <span id="ws-timer-display" class="ws-floating-timer-display">02:00:00</span>
+      <button type="button" id="ws-timer-start" class="ws-floating-timer-btn" title="시작">▶</button>
+      <button type="button" id="ws-timer-reset" class="ws-floating-timer-btn" title="초기화">↺</button>
+      <button type="button" id="ws-timer-settings" class="ws-floating-timer-btn" title="시간 설정">⚙</button>
+      <button type="button" id="ws-exam-end-btn" class="ws-floating-timer-btn ws-floating-timer-end" title="시험 종료">종료</button>
+    </div>
+    <div id="ws-timer-settings-panel" class="ws-floating-timer-settings" hidden>
+      <div class="ws-floating-timer-presets">
+        <button type="button" class="ws-btn" data-timer-minutes="30">30분</button>
+        <button type="button" class="ws-btn" data-timer-minutes="60">60분</button>
+        <button type="button" class="ws-btn" data-timer-minutes="90">90분</button>
+        <button type="button" class="ws-btn is-active" data-timer-minutes="120">120분</button>
+      </div>
+      <label class="ws-floating-timer-custom">
+        <span>직접 입력(분)</span>
+        <input type="number" id="ws-timer-custom-min" min="1" max="300" value="120" class="ws-input-short" />
+        <button type="button" id="ws-timer-custom-apply" class="ws-btn">적용</button>
+      </label>
+    </div>
+  </div>
 
   <div id="ws-toast" class="ws-toast" hidden role="status"></div>
   <script type="module" src="workspace-main.js"></script>
