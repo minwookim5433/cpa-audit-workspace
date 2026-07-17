@@ -148,8 +148,76 @@ export function getAnswerEditorExportStyles(typography = {}, referenceEditor = n
     zIndex: "1",
     margin: "0",
     color: "#000000",
-    backgroundColor: "#ffffff",
+    backgroundColor: "transparent",
   };
+}
+
+/** PDF/html2canvas 출력 — 회색 줄 (캔버스 직접 그리기용 메트릭 + CSS 백업) */
+export const ANSWER_GRID_LINE_COLOR = "#c8ccd4";
+
+export function applyAnswerGridLinesForExport(sheetEl, pageEl = null) {
+  if (!sheetEl) return null;
+  const body = sheetEl.querySelector(".answer-doc-body, .answer-sheet-content");
+  const bg = sheetEl.querySelector(".answer-doc-bg, .answer-line-background");
+  const editor = sheetEl.querySelector(".answer-doc-editor");
+  if (!body) return null;
+
+  const page = pageEl || sheetEl.closest(".export-answer-page") || sheetEl;
+  const pageRect = page.getBoundingClientRect();
+  const bodyRect = body.getBoundingClientRect();
+  const bodyTop = bodyRect.top - pageRect.top;
+  const bodyHeight = body.clientHeight || bodyRect.height;
+  if (bodyHeight <= 0) return null;
+
+  const css = getComputedStyle(sheetEl);
+  const padL = parseFloat(css.getPropertyValue("--answer-padding-left")) || ANSWER_PADDING_LEFT_PX;
+  const padR = parseFloat(css.getPropertyValue("--answer-padding-right")) || ANSWER_PADDING_RIGHT_PX;
+  const rowHeight = bodyHeight / ANSWER_ROWS_PER_PAGE;
+  const rowHeightCss = `${rowHeight}px`;
+
+  Object.assign(body.style, {
+    backgroundColor: "#ffffff",
+    backgroundImage: `repeating-linear-gradient(to bottom, #ffffff 0, #ffffff calc(${rowHeightCss} - 1px), ${ANSWER_GRID_LINE_COLOR} calc(${rowHeightCss} - 1px), ${ANSWER_GRID_LINE_COLOR} ${rowHeightCss})`,
+    backgroundSize: `calc(100% - ${padL + padR}px) ${rowHeightCss}`,
+    backgroundRepeat: "repeat-y",
+    backgroundPosition: `${padL}px 0`,
+  });
+
+  if (editor) {
+    editor.style.backgroundColor = "transparent";
+    editor.style.background = "transparent";
+  }
+
+  if (bg) {
+    bg.removeAttribute("aria-hidden");
+    Object.assign(bg.style, {
+      visibility: "visible",
+      opacity: "1",
+      zIndex: "0",
+      pointerEvents: "none",
+    });
+    bg.querySelectorAll(".answer-doc-bg-line").forEach((line) => line.removeAttribute("aria-hidden"));
+  }
+
+  sheetEl.querySelectorAll(".draw-interact-layer").forEach((el) => {
+    el.style.display = "none";
+  });
+
+  const metrics = {
+    bodyTop: Math.round(bodyTop * 100) / 100,
+    rowHeight: Math.round(rowHeight * 1000) / 1000,
+    padL,
+    padR,
+    rows: ANSWER_ROWS_PER_PAGE,
+  };
+
+  sheetEl.dataset.exportGridBodyTop = String(metrics.bodyTop);
+  sheetEl.dataset.exportGridRowHeight = String(metrics.rowHeight);
+  sheetEl.dataset.exportGridPadL = String(metrics.padL);
+  sheetEl.dataset.exportGridPadR = String(metrics.padR);
+  sheetEl.dataset.exportGridRows = String(metrics.rows);
+
+  return metrics;
 }
 
 export function applyAnswerEditorExportStyles(el, typography = {}, referenceEditor = null) {
@@ -546,7 +614,6 @@ export function applyPdfA4ExportFillLayout(
         "overflowWrap",
         "wordBreak",
         "color",
-        "backgroundColor",
         "boxSizing",
       ]);
     } else {
@@ -571,9 +638,12 @@ export function applyPdfA4ExportFillLayout(
       height: "100%",
       minHeight: "100%",
       outline: "none",
+      backgroundColor: "transparent",
+      background: "transparent",
     });
   }
 
+  applyAnswerGridLinesForExport(sheetEl, pageEl);
   return { scale, scaledFontSize, scaledLetterSpacing, scaledPadL, scaledPadR };
 }
 

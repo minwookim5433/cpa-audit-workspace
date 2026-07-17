@@ -46,6 +46,18 @@ export function finalizeSheetClone(clone) {
 
 import { setEditorContent } from "./workspace-answer-format.js";
 
+export function buildAnswerSheetFromPageHtml(pageIndex, pageHtml, typography = {}) {
+  const mount = document.createElement("div");
+  mount.innerHTML = SHEET_MARKUP(pageIndex);
+  const t = normalizeAnswerTypography(typography);
+  applyAnswerSheetVars(mount, t);
+  const sheet = mount.querySelector(".answer-doc-sheet");
+  applyAnswerSheetVars(sheet, t);
+  const editor = sheet.querySelector(".answer-doc-editor");
+  setEditorContent(editor, pageHtml ?? "");
+  return finalizeSheetClone(sheet);
+}
+
 export function mountOffscreenSheet(pageIndex, pageContent, widthPx, typography = {}) {
   const mount = document.createElement("div");
   mount.className = "answer-doc-offscreen-mount";

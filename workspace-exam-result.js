@@ -15,6 +15,7 @@ import {
 } from "./workspace-answer-export.js";
 
 import { applyAnswerSheetVars } from "./workspace-answer-typography.js";
+import { buildAnswerSheetFromPageHtml } from "./workspace-answer-clone.js";
 
 import { ANSWER_PAGE_COUNT } from "./workspace-answer-editor.js";
 
@@ -34,27 +35,11 @@ function formatDuration(seconds) {
 
 
 
-function buildPreviewClonesFromSheet(answerSheet) {
+function buildPreviewClonesFromSheet(answerSheet, typography = {}) {
 
-  return (answerSheet || []).map((pageHtml, index) => {
-
-    const sheet = document.createElement("div");
-
-    sheet.className = "answer-doc-sheet answer-sheet-page";
-
-    sheet.dataset.page = String(index + 1);
-
-    const editor = document.createElement("div");
-
-    editor.className = "answer-doc-editor";
-
-    editor.innerHTML = stripFormatSpansFromHtml(String(pageHtml ?? ""));
-
-    sheet.appendChild(editor);
-
-    return sheet;
-
-  });
+  return (answerSheet || []).map((pageHtml, index) =>
+    buildAnswerSheetFromPageHtml(index, pageHtml, typography)
+  );
 
 }
 
@@ -190,7 +175,10 @@ export function createExamResultController({
 
     previewIndex = 0;
 
-    previewClones = buildPreviewClonesFromSheet(attempt.answerPages || attempt.answerSheet);
+    previewClones = buildPreviewClonesFromSheet(attempt.answerPages || attempt.answerSheet, {
+      fontSize: attempt.fontSize,
+      letterSpacing: attempt.letterSpacing,
+    });
 
     applyAnswerSheetVars(previewEl, {
 
@@ -288,7 +276,14 @@ export function createExamResultController({
 
     if (!currentAttempt) return;
 
-    const clones = buildPreviewClonesFromSheet(currentAttempt.answerPages || currentAttempt.answerSheet).filter((clone) => {
+    const typography = {
+      fontSize: currentAttempt.fontSize,
+      letterSpacing: currentAttempt.letterSpacing,
+    };
+    const clones = buildPreviewClonesFromSheet(
+      currentAttempt.answerPages || currentAttempt.answerSheet,
+      typography
+    ).filter((clone) => {
 
       const html = clone.querySelector(".answer-doc-editor")?.innerHTML || "";
 
@@ -312,7 +307,7 @@ export function createExamResultController({
 
         filename,
 
-        { fontSize: currentAttempt.fontSize, letterSpacing: currentAttempt.letterSpacing },
+        typography,
 
         null,
 

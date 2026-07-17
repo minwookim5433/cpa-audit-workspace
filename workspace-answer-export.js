@@ -12,6 +12,7 @@ import {
   applyAnswerEditorExportStyles,
   applyAnswerSheetExportLayout,
   applyAnswerBodyExportLayout,
+  applyAnswerGridLinesForExport,
   applyPdfA4ExportFillLayout,
   finalizePdfA4ExportRowHeights,
   measurePdfA4ExportDimensions,
@@ -127,9 +128,31 @@ function buildCloneExportStyles() {
       position: relative;
       min-height: calc(${ANSWER_LINE_HEIGHT_PX}px * 25);
       box-sizing: border-box;
+      background: #fff;
+    }
+    .export-answer-page .answer-doc-bg,
+    .export-answer-page .answer-line-background {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      padding: 0 var(--answer-padding-right, 10px) 0 var(--answer-padding-left, 10px);
+      box-sizing: border-box;
+    }
+    .export-answer-page .answer-doc-bg-line {
+      flex: 1 1 0;
+      min-height: 0;
+      border-bottom: 1px solid #c8ccd4;
+      box-shadow: inset 0 -1px 0 #c8ccd4;
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     .export-answer-page .answer-doc-editor {
-      position: relative;
+      position: absolute;
+      inset: 0;
       z-index: 1;
       min-height: calc(${ANSWER_LINE_HEIGHT_PX}px * 25);
       font-family: ${ANSWER_FONT_FAMILY};
@@ -138,6 +161,7 @@ function buildCloneExportStyles() {
       overflow-wrap: anywhere;
       box-sizing: border-box;
       outline: none;
+      background: transparent;
     }
     @media print {
       body { background: #fff; }
@@ -196,6 +220,9 @@ function finalizeExportDocumentStyles(idoc, typography, referenceEditor = null) 
   idoc.querySelectorAll(".answer-doc-editor").forEach((el) => {
     applyAnswerEditorExportStyles(el, typography, referenceEditor);
   });
+  idoc.querySelectorAll(".answer-doc-sheet, .answer-sheet-page, .answer-doc-sheet-clone").forEach((el) => {
+    applyAnswerGridLinesForExport(el);
+  });
 }
 
 async function prepareOffscreenCapturePages(
@@ -207,7 +234,7 @@ async function prepareOffscreenCapturePages(
   const mount = document.createElement("div");
   mount.className = "answer-doc-capture-mount";
   mount.style.cssText =
-    "position:fixed;left:-10000px;top:0;z-index:-1;pointer-events:none;background:#fff;transform:none;zoom:1;opacity:0.01;";
+    "position:fixed;left:-12000px;top:0;z-index:-1;pointer-events:none;background:#fff;transform:none;zoom:1;opacity:1;visibility:visible;";
   document.body.appendChild(mount);
 
   const t = normalizeAnswerTypography(typography);
@@ -246,9 +273,11 @@ async function prepareOffscreenCapturePages(
   await waitForExportLayout(document);
 
   layoutLog.forEach((entry, index) => {
-    const sheet = pages[index]?.querySelector(".answer-doc-sheet");
+    const page = pages[index];
+    const sheet = page?.querySelector(".answer-doc-sheet");
     entry.rowMetrics = finalizePdfA4ExportRowHeights(sheet);
-    entry.after = measurePdfA4ExportDimensions(pages[index], sheet);
+    applyAnswerGridLinesForExport(sheet, page);
+    entry.after = measurePdfA4ExportDimensions(page, sheet);
   });
 
   await waitForExportLayout(document);
