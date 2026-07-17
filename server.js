@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const express = require("express");
+const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 const pdfParse = require("pdf-parse");
@@ -41,19 +42,41 @@ const imageUpload = multer({
 
 app.use(express.json({ limit: "5mb" }));
 
+const APP_BUILD_ID = process.env.RENDER_GIT_COMMIT || process.env.APP_BUILD_ID || "dev-local";
+const staticRoot = path.join(__dirname);
+
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
+app.get("/version", (_req, res) => {
+  res.json({
+    status: "ok",
+    commit: APP_BUILD_ID,
+    features: { pdfAnswerGridLines: true },
+  });
+});
+
+app.get("/", (_req, res) => {
+  const indexPath = path.join(staticRoot, "index.html");
+  let html = fs.readFileSync(indexPath, "utf8");
+  html = html.replace(
+    'src="workspace-main.js"',
+    `src="workspace-main.js?v=${encodeURIComponent(APP_BUILD_ID.slice(0, 12))}"`
+  );
+  res.setHeader("Cache-Control", "no-cache");
+  res.type("html").send(html);
+});
+
 const nodeModulesDir = path.join(__dirname, "node_modules");
 app.use("/node_modules", express.static(nodeModulesDir));
-app.use(express.static(path.join(__dirname), {
+app.use(express.static(staticRoot, {
   setHeaders(res, filePath) {
     if (/\.(js|css|html)$/i.test(filePath)) {
       res.setHeader("Cache-Control", "no-cache");
     }
   },
 }));
-
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok" });
-});
 
 const SYSTEM_PROMPT = `당신은 감사인이 CPA 사례형 문제·실무 감사업무를 수행할 때 사용하는 AI Audit Workbench의 보조 도구입니다.
 기업을 자동으로 진단하거나 CPA 정답·모범답안·최종감사의견을 작성하지 마세요.

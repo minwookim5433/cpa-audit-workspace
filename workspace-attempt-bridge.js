@@ -30,6 +30,7 @@ import { createEmptyAnswerSheet, normalizeAnswerPages } from "./workspace-answer
 import { stripFormatSpansFromSheet } from "./workspace-answer-format.js";
 import { applyAnswerSheetVars } from "./workspace-answer-typography.js";
 import { buildAnswerPdfFilename, downloadPdfFromClones } from "./workspace-answer-export.js";
+import { buildAnswerSheetFromPageHtml } from "./workspace-answer-clone.js";
 
 export function initAttemptBridge({
   state,
@@ -335,20 +336,22 @@ export function initAttemptBridge({
     onExportPdf: async (id) => {
       const attempt = await getAttempt(id);
       if (!attempt) return;
-      const sheet = document.createElement("div");
-      sheet.className = "answer-doc-sheet";
-      const editor = document.createElement("div");
-      editor.className = "answer-doc-editor";
-      editor.innerHTML = (attempt.answerPages || []).join("");
-      sheet.appendChild(editor);
+      const pages = attempt.answerPages || attempt.answerSheet || [];
+      const typography = {
+        fontSize: attempt.fontSize,
+        letterSpacing: attempt.letterSpacing,
+      };
+      const clones = pages.map((pageHtml, index) =>
+        buildAnswerSheetFromPageHtml(index, pageHtml, typography)
+      );
       await downloadPdfFromClones(
-        [sheet],
+        clones,
         buildAnswerPdfFilename({
           year: attempt.year,
           documentTitle: attempt.documentTitle,
           docTitle: attempt.documentTitle,
         }),
-        { fontSize: attempt.fontSize, letterSpacing: attempt.letterSpacing },
+        typography,
         null,
         { logPages: false }
       );
