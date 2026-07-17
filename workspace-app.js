@@ -57,11 +57,6 @@ import {
   TEMPLATE_STORE,
 } from "./workspace-attempt-db.js";
 import { initAttemptBridge } from "./workspace-attempt-bridge.js";
-import {
-  downloadPdfFromClones,
-  buildAnswerPdfFilename,
-  NoAnswerContentError,
-} from "./workspace-answer-export.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/node_modules/pdfjs-dist/build/pdf.worker.mjs";
 
@@ -1358,21 +1353,6 @@ function getExamPdfMeta() {
   };
 }
 
-async function saveExamPdfFromCurrent() {
-  answerDocController?.flushPersist?.();
-  syncAnswerPageToState();
-  const clones = answerDocController?.cloneAllSheets?.() || [];
-  const filename = buildAnswerPdfFilename(getExamPdfMeta());
-  await downloadPdfFromClones(
-    clones,
-    filename,
-    getAnswerTypography(),
-    answerDocController?.getEditorEl?.() || null,
-    { logPages: false }
-  );
-  return { saved: true, filename };
-}
-
 async function finalizeExamEnd() {
   const modal = document.getElementById("ws-exam-end-modal");
   if (modal) modal.hidden = true;
@@ -1387,21 +1367,12 @@ async function finalizeExamEnd() {
   showStatus("답안 저장 중…", "loading");
   flushSaveNow();
 
-  let pdfResult = { saved: false, filename: "" };
-  try {
-    pdfResult = await saveExamPdfFromCurrent();
-  } catch (err) {
-    if (!(err instanceof NoAnswerContentError)) {
-      console.warn("PDF save during exam end:", err);
-    }
-  }
-
   const attempt = await attemptBridge.saveCompletedAttempt({
-    pdfSaved: pdfResult.saved,
-    pdfFilename: pdfResult.filename || "",
+    pdfSaved: false,
+    pdfFilename: "",
   });
   currentExamAttempt = attempt;
-  showStatus("답안이 저장되었습니다.", "success");
+  showStatus("시험이 종료되었습니다. PDF 저장 버튼으로 답안지를 저장하세요.", "success");
   examResultController?.open(attempt);
 }
 

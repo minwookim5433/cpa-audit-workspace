@@ -175,9 +175,7 @@ export function createExamResultController({
       pdfStatusEl.innerHTML = `<p>PDF 저장 완료: <strong>${attempt.pdfFilename || "답안지.pdf"}</strong></p>`;
 
     } else {
-
-      pdfStatusEl.innerHTML = `<p>PDF가 아직 저장되지 않았습니다.</p>`;
-
+      pdfStatusEl.innerHTML = `<p>PDF 저장 버튼을 눌러 답안지를 저장하세요.</p>`;
     }
 
   }
@@ -208,7 +206,7 @@ export function createExamResultController({
 
     renderPdfStatus(attempt);
 
-    setActiveTab("preview");
+    setActiveTab(attempt.pdfSaved ? "preview" : "pdf");
 
     modalEl.hidden = false;
 
