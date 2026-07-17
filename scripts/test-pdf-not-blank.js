@@ -54,7 +54,8 @@ async function main() {
     const state = window.__workspaceAnswerExportState();
     const audit = pagesMod.selectPagesForPdfExport(state.clones, { log: false });
     await captureMod.ensurePdfCaptureLibs();
-    const referenceSheet = document.querySelector(".answer-doc-sheet");
+    const referenceEditor = document.querySelector(".answer-doc-editor");
+    const t = typoMod.normalizeAnswerTypography(state.answerTypography);
     const mount = document.createElement("div");
     mount.style.cssText =
       "position:fixed;left:-10000px;top:0;z-index:-1;pointer-events:none;background:#fff;opacity:0.01;";
@@ -63,18 +64,6 @@ async function main() {
     const pageNodes = audit.pagesToExport.map((clone) => {
       const page = document.createElement("section");
       page.className = "export-answer-page";
-      Object.assign(page.style, {
-        width: `${captureMod.EXPORT_PAGE_WIDTH_PX}px`,
-        height: `${captureMod.EXPORT_PAGE_HEIGHT_PX}px`,
-        boxSizing: "border-box",
-        overflow: "hidden",
-        margin: "0",
-        padding: "0",
-        background: "#fff",
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-      });
       const inner = document.createElement("div");
       inner.className = "export-answer-page-inner";
       Object.assign(inner.style, {
@@ -82,18 +71,21 @@ async function main() {
         height: "100%",
         boxSizing: "border-box",
         overflow: "hidden",
-        paddingTop: "24px",
-        display: "flex",
-        justifyContent: "center",
+        margin: "0",
+        padding: "0",
       });
       const sheet = clone.cloneNode(true);
       inner.appendChild(sheet);
       page.appendChild(inner);
       mount.appendChild(page);
-      if (referenceSheet) typoMod.copyAnswerSheetComputedStyles(referenceSheet, sheet);
+      typoMod.applyPdfA4ExportFillLayout(page, sheet, t, referenceEditor);
       return page;
     });
 
+    await typoMod.waitForExportLayout(document);
+    pageNodes.forEach((page) => {
+      typoMod.finalizePdfA4ExportRowHeights(page.querySelector(".answer-doc-sheet"));
+    });
     await typoMod.waitForExportLayout(document);
     pageNodes.forEach((n) => captureMod.normalizeExportPageNode(n));
 

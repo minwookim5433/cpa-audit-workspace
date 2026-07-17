@@ -15,6 +15,12 @@ export const ANSWER_PAGE_WIDTH_PX = 560;
 export const ANSWER_PADDING_LEFT_PX = 10;
 export const ANSWER_PADDING_RIGHT_PX = 10;
 export const ANSWER_LINE_HEIGHT_PX = 28;
+export const A4_EXPORT_PAGE_WIDTH_PX = 794;
+export const A4_EXPORT_PAGE_HEIGHT_PX = 1123;
+export const A4_EXPORT_PAGE_PADDING_TOP_PX = 38;
+export const A4_EXPORT_PAGE_PADDING_RIGHT_PX = 55;
+export const A4_EXPORT_PAGE_PADDING_BOTTOM_PX = 38;
+export const A4_EXPORT_PAGE_PADDING_LEFT_PX = 55;
 export const ANSWER_FONT_FAMILY =
   '"Batang", "Nanum Myeongjo", "Noto Serif KR", "Times New Roman", serif';
 
@@ -356,6 +362,220 @@ export function getAnswerEditorStyleSnapshot(editorEl) {
     contentWidth: Math.max(0, editorEl.clientWidth - padL - padR),
     paddingLeft: css.paddingLeft,
     paddingRight: css.paddingRight,
+  };
+}
+
+export function assertAnswerExportTypographyCore(referenceEl, outputEl) {
+  const ref = getAnswerEditorStyleSnapshot(referenceEl);
+  const out = getAnswerEditorStyleSnapshot(outputEl);
+  if (!ref || !out) return;
+
+  const mismatches = [];
+  if (!pxValuesClose(ref.fontSize, out.fontSize)) {
+    mismatches.push(["font-size", ref.fontSize, out.fontSize]);
+  }
+  if (!pxValuesClose(ref.letterSpacing, out.letterSpacing, 0.05)) {
+    mismatches.push(["letter-spacing", ref.letterSpacing, out.letterSpacing]);
+  }
+  if (!fontFamiliesMatch(ref.fontFamily, out.fontFamily)) {
+    mismatches.push(["font-family", ref.fontFamily, out.fontFamily]);
+  }
+
+  if (mismatches.length) {
+    const detail = mismatches.map(([k, a, b]) => `${k}: ref=${a} out=${b}`).join("; ");
+    console.error("[answer-export] typography mismatch:", detail);
+    throw new Error("답안 출력 스타일을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
+  }
+}
+
+export function applyPdfA4ExportFillLayout(pageEl, sheetEl, typography = {}, referenceEditor = null) {
+  if (!pageEl || !sheetEl) return;
+
+  const t = normalizeAnswerTypography(typography);
+  const innerWidth =
+    A4_EXPORT_PAGE_WIDTH_PX - A4_EXPORT_PAGE_PADDING_LEFT_PX - A4_EXPORT_PAGE_PADDING_RIGHT_PX;
+  const innerHeight =
+    A4_EXPORT_PAGE_HEIGHT_PX - A4_EXPORT_PAGE_PADDING_TOP_PX - A4_EXPORT_PAGE_PADDING_BOTTOM_PX;
+
+  applyAnswerSheetVars(pageEl, t);
+  Object.assign(pageEl.style, {
+    width: `${A4_EXPORT_PAGE_WIDTH_PX}px`,
+    height: `${A4_EXPORT_PAGE_HEIGHT_PX}px`,
+    boxSizing: "border-box",
+    overflow: "hidden",
+    margin: "0",
+    padding: `${A4_EXPORT_PAGE_PADDING_TOP_PX}px ${A4_EXPORT_PAGE_PADDING_RIGHT_PX}px ${A4_EXPORT_PAGE_PADDING_BOTTOM_PX}px ${A4_EXPORT_PAGE_PADDING_LEFT_PX}px`,
+    background: "#ffffff",
+    transform: "none",
+    zoom: "1",
+    position: "relative",
+  });
+
+  applyAnswerSheetVars(sheetEl, t);
+  sheetEl.style.setProperty("--answer-page-width", `${innerWidth}px`);
+  sheetEl.style.setProperty(
+    "--answer-content-width",
+    `${innerWidth - ANSWER_PADDING_LEFT_PX - ANSWER_PADDING_RIGHT_PX}px`
+  );
+  Object.assign(sheetEl.style, {
+    width: "100%",
+    height: "100%",
+    maxWidth: "none",
+    minWidth: "0",
+    minHeight: "0",
+    margin: "0",
+    boxSizing: "border-box",
+    transform: "none",
+    zoom: "1",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+    background: "#ffffff",
+  });
+
+  const header = sheetEl.querySelector(".answer-doc-header");
+  const body = sheetEl.querySelector(".answer-doc-body, .answer-sheet-content");
+  const bg = sheetEl.querySelector(".answer-doc-bg, .answer-line-background");
+  const editor = sheetEl.querySelector(".answer-doc-editor");
+  const bgLines = [...sheetEl.querySelectorAll(".answer-doc-bg-line")];
+
+  if (header) {
+    Object.assign(header.style, { flexShrink: "0" });
+  }
+
+  if (body) {
+    Object.assign(body.style, {
+      position: "relative",
+      flex: "1",
+      minHeight: "0",
+      height: "auto",
+      boxSizing: "border-box",
+    });
+  }
+
+  if (bg) {
+    Object.assign(bg.style, {
+      position: "absolute",
+      inset: "0",
+      display: "grid",
+      gridTemplateRows: "repeat(25, 1fr)",
+      padding: `0 ${ANSWER_PADDING_RIGHT_PX}px 0 ${ANSWER_PADDING_LEFT_PX}px`,
+      boxSizing: "border-box",
+      pointerEvents: "none",
+      zIndex: "0",
+    });
+  }
+
+  bgLines.forEach((line) => {
+    Object.assign(line.style, {
+      height: "auto",
+      minHeight: "0",
+      borderBottom: "1px solid #c8ccd4",
+      boxSizing: "border-box",
+    });
+  });
+
+  if (editor) {
+    if (referenceEditor) {
+      copyExportStylesFromElement(referenceEditor, editor, [
+        "fontFamily",
+        "fontSize",
+        "fontWeight",
+        "letterSpacing",
+        "textAlign",
+        "whiteSpace",
+        "overflowWrap",
+        "wordBreak",
+        "color",
+        "backgroundColor",
+        "boxSizing",
+      ]);
+    } else {
+      Object.assign(editor.style, {
+        fontFamily: ANSWER_FONT_FAMILY,
+        fontSize: `${t.fontSize}px`,
+        letterSpacing: `${t.letterSpacing}px`,
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-all",
+        overflowWrap: "anywhere",
+      });
+    }
+    Object.assign(editor.style, {
+      position: "absolute",
+      inset: "0",
+      zIndex: "1",
+      padding: `0 ${ANSWER_PADDING_RIGHT_PX}px 0 ${ANSWER_PADDING_LEFT_PX}px`,
+      margin: "0",
+      width: "100%",
+      maxWidth: "none",
+      minWidth: "0",
+      height: "100%",
+      minHeight: "100%",
+      outline: "none",
+    });
+  }
+}
+
+export function finalizePdfA4ExportRowHeights(sheetEl) {
+  const body = sheetEl?.querySelector(".answer-doc-body, .answer-sheet-content");
+  const editor = sheetEl?.querySelector(".answer-doc-editor");
+  if (!body) return null;
+
+  const bodyHeight = body.clientHeight;
+  if (bodyHeight <= 0) return null;
+
+  const rowHeight = bodyHeight / 25;
+  const rowHeightPx = `${rowHeight}px`;
+  sheetEl.style.setProperty("--answer-line-height", rowHeightPx);
+
+  if (editor) {
+    editor.style.lineHeight = rowHeightPx;
+  }
+
+  const bgLines = [...sheetEl.querySelectorAll(".answer-doc-bg-line")];
+  return {
+    bodyHeight,
+    rowHeight,
+    rows25Height: bodyHeight,
+    rowCount: bgLines.length,
+    lastRowBottom: bgLines[bgLines.length - 1]?.getBoundingClientRect().bottom ?? null,
+  };
+}
+
+export function measurePdfA4ExportDimensions(pageEl, sheetEl) {
+  if (!pageEl || !sheetEl) return null;
+  const pageCss = getComputedStyle(pageEl);
+  const sheetRect = sheetEl.getBoundingClientRect();
+  const pageRect = pageEl.getBoundingClientRect();
+  const lines = [...sheetEl.querySelectorAll(".answer-doc-bg-line")];
+  const lastLine = lines[lines.length - 1];
+  const lastLineRect = lastLine?.getBoundingClientRect();
+
+  return {
+    wrapper: {
+      width: pageEl.offsetWidth,
+      height: pageEl.offsetHeight,
+      paddingTop: pageCss.paddingTop,
+      paddingRight: pageCss.paddingRight,
+      paddingBottom: pageCss.paddingBottom,
+      paddingLeft: pageCss.paddingLeft,
+    },
+    sheet: {
+      width: sheetEl.offsetWidth,
+      height: sheetEl.offsetHeight,
+      offsetWidth: sheetEl.offsetWidth,
+      offsetHeight: sheetEl.offsetHeight,
+      rectWidth: Math.round(sheetRect.width * 100) / 100,
+      rectHeight: Math.round(sheetRect.height * 100) / 100,
+      rectTop: Math.round(sheetRect.top * 100) / 100,
+      rectBottom: Math.round(sheetRect.bottom * 100) / 100,
+    },
+    rows25Height: lines.reduce((sum, line) => sum + line.getBoundingClientRect().height, 0),
+    lastRowBottom: lastLineRect ? Math.round(lastLineRect.bottom * 100) / 100 : null,
+    wrapperBottom: Math.round(pageRect.bottom * 100) / 100,
+    gapBelowLastRow: lastLineRect
+      ? Math.round((pageRect.bottom - lastLineRect.bottom) * 100) / 100
+      : null,
   };
 }
 

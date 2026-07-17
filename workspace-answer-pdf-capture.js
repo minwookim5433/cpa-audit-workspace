@@ -56,7 +56,6 @@ export function normalizeExportPageNode(pageNode, { log = false } = {}) {
     boxSizing: "border-box",
     overflow: "hidden",
     margin: "0",
-    padding: "0",
     position: "relative",
     background: "#ffffff",
   });

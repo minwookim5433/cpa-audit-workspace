@@ -12,9 +12,11 @@ import {
   applyAnswerEditorExportStyles,
   applyAnswerSheetExportLayout,
   applyAnswerBodyExportLayout,
-  copyAnswerSheetComputedStyles,
+  applyPdfA4ExportFillLayout,
+  finalizePdfA4ExportRowHeights,
+  measurePdfA4ExportDimensions,
+  assertAnswerExportTypographyCore,
   measureAnswerPageLayout,
-  measureAnswerContentVerticalLayout,
   ANSWER_PAGE_WIDTH_PX,
   ANSWER_LINE_HEIGHT_PX,
   ANSWER_FONT_FAMILY,
@@ -204,9 +206,8 @@ function buildOffscreenExportPageInner() {
     height: "100%",
     boxSizing: "border-box",
     overflow: "hidden",
-    paddingTop: "24px",
-    display: "flex",
-    justifyContent: "center",
+    margin: "0",
+    padding: "0",
   });
   return inner;
 }
@@ -214,7 +215,6 @@ function buildOffscreenExportPageInner() {
 async function prepareOffscreenCapturePages(
   clones,
   typography,
-  referenceSheet,
   referenceEditor,
   { log = false } = {}
 ) {
@@ -226,81 +226,61 @@ async function prepareOffscreenCapturePages(
 
   const t = normalizeAnswerTypography(typography);
   const pages = [];
+  const layoutLog = [];
 
   clones.forEach((clone, index) => {
     const page = document.createElement("section");
     page.className = "export-answer-page";
     page.dataset.page = String(index + 1);
-    applyAnswerSheetVars(page, t);
-    Object.assign(page.style, {
-      width: `${EXPORT_PAGE_WIDTH_PX}px`,
-      height: `${EXPORT_PAGE_HEIGHT_PX}px`,
-      boxSizing: "border-box",
-      overflow: "hidden",
-      margin: "0",
-      padding: "0",
-      background: "#ffffff",
-      display: "flex",
-      alignItems: "flex-start",
-      justifyContent: "center",
-    });
 
     const inner = buildOffscreenExportPageInner();
     const sheet = clone.cloneNode(true);
-    Object.assign(sheet.style, {
-      transform: "none",
-      zoom: "1",
-      transformOrigin: "initial",
-      margin: "0",
-    });
     inner.appendChild(sheet);
     page.appendChild(inner);
     mount.appendChild(page);
 
-    if (referenceSheet) {
-      copyAnswerSheetComputedStyles(referenceSheet, sheet);
-    } else {
-      applyAnswerSheetExportLayout(sheet, t);
-      applyAnswerBodyExportLayout(
-        sheet.querySelector(".answer-doc-body, .answer-sheet-content")
-      );
-      applyAnswerEditorExportStyles(
-        sheet.querySelector(".answer-doc-editor"),
-        t,
-        referenceEditor
-      );
-    }
+    const beforeSheet = measureAnswerPageLayout(sheet, `before-fill-${index + 1}`);
+    applyPdfA4ExportFillLayout(page, sheet, t, referenceEditor);
 
     if (log) {
       page.style.outline = "2px solid red";
     }
 
+    layoutLog.push({ page: index + 1, beforeSheet });
     pages.push(page);
   });
 
   await waitForExportLayout(document);
 
+  layoutLog.forEach((entry, index) => {
+    const sheet = pages[index]?.querySelector(".answer-doc-sheet");
+    entry.rowMetrics = finalizePdfA4ExportRowHeights(sheet);
+    entry.after = measurePdfA4ExportDimensions(pages[index], sheet);
+  });
+
+  await waitForExportLayout(document);
+
   if (log) {
-    const liveSheet = referenceSheet || document.querySelector(".answer-doc-sheet");
-    const previewSheet = liveSheet?.cloneNode(true);
-    if (previewSheet && liveSheet) {
-      copyAnswerSheetComputedStyles(liveSheet, previewSheet);
-    }
-    console.group("[answer-export] layout compare");
-    if (liveSheet) {
-      console.table([
-        measureAnswerContentVerticalLayout(liveSheet),
-        previewSheet ? measureAnswerContentVerticalLayout(previewSheet) : null,
-      ].filter(Boolean));
-    }
+    console.group("[answer-export] A4 fill layout");
     console.table(
-      pages.map((page, index) => ({
-        ...measureAnswerContentVerticalLayout(page.querySelector(".answer-doc-sheet")),
-        editor: measureAnswerPageLayout(
-          page.querySelector(".answer-doc-editor"),
-          `export-editor-${index + 1}`
-        ),
+      layoutLog.map((entry) => ({
+        page: entry.page,
+        beforeWidth: entry.beforeSheet.offsetWidth,
+        beforeHeight: entry.beforeSheet.offsetHeight,
+        afterWidth: entry.after?.sheet?.offsetWidth,
+        afterHeight: entry.after?.sheet?.offsetHeight,
+        rows25Height: entry.after?.rows25Height,
+        lastRowBottom: entry.after?.lastRowBottom,
+        wrapperBottom: entry.after?.wrapperBottom,
+        gapBelowLastRow: entry.after?.gapBelowLastRow,
+        rowHeight: entry.rowMetrics?.rowHeight,
       }))
+    );
+    console.log(
+      "wrapper padding:",
+      layoutLog[0]?.after?.wrapper
+        ? `${layoutLog[0].after.wrapper.paddingTop} ${layoutLog[0].after.wrapper.paddingRight} ${layoutLog[0].after.wrapper.paddingBottom} ${layoutLog[0].after.wrapper.paddingLeft}`
+        : "(none)"
     );
     console.groupEnd();
   }
@@ -308,11 +288,11 @@ async function prepareOffscreenCapturePages(
   if (referenceEditor) {
     const outputEditor = pages[0]?.querySelector(".answer-doc-editor");
     if (outputEditor) {
-      assertAnswerTypographyMatch(referenceEditor, outputEditor);
+      assertAnswerExportTypographyCore(referenceEditor, outputEditor);
     }
   }
 
-  return { mount, pages };
+  return { mount, pages, layoutLog };
 }
 
 async function prepareExportDocument(html, typography, referenceEditor) {
@@ -395,14 +375,10 @@ export async function downloadPdfFromClones(
   }
 
   const t = normalizeAnswerTypography(typography);
-  const referenceSheet =
-    referenceEditor?.closest?.(".answer-doc-sheet") ||
-    document.querySelector(".answer-doc-sheet");
 
   const { mount, pages } = await prepareOffscreenCapturePages(
     audit.pagesToExport,
     t,
-    referenceSheet,
     referenceEditor,
     { log: logPages }
   );
