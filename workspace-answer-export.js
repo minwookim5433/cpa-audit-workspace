@@ -198,20 +198,6 @@ function finalizeExportDocumentStyles(idoc, typography, referenceEditor = null) 
   });
 }
 
-function buildOffscreenExportPageInner() {
-  const inner = document.createElement("div");
-  inner.className = "export-answer-page-inner";
-  Object.assign(inner.style, {
-    width: "100%",
-    height: "100%",
-    boxSizing: "border-box",
-    overflow: "hidden",
-    margin: "0",
-    padding: "0",
-  });
-  return inner;
-}
-
 async function prepareOffscreenCapturePages(
   clones,
   typography,
@@ -233,10 +219,8 @@ async function prepareOffscreenCapturePages(
     page.className = "export-answer-page";
     page.dataset.page = String(index + 1);
 
-    const inner = buildOffscreenExportPageInner();
     const sheet = clone.cloneNode(true);
-    inner.appendChild(sheet);
-    page.appendChild(inner);
+    page.appendChild(sheet);
     mount.appendChild(page);
 
     const beforeSheet = measureAnswerPageLayout(sheet, `before-fill-${index + 1}`);

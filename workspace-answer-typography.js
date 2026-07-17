@@ -17,10 +17,10 @@ export const ANSWER_PADDING_RIGHT_PX = 10;
 export const ANSWER_LINE_HEIGHT_PX = 28;
 export const A4_EXPORT_PAGE_WIDTH_PX = 794;
 export const A4_EXPORT_PAGE_HEIGHT_PX = 1123;
-export const A4_EXPORT_PAGE_PADDING_TOP_PX = 38;
-export const A4_EXPORT_PAGE_PADDING_RIGHT_PX = 55;
-export const A4_EXPORT_PAGE_PADDING_BOTTOM_PX = 38;
-export const A4_EXPORT_PAGE_PADDING_LEFT_PX = 55;
+export const A4_EXPORT_PAGE_PADDING_TOP_PX = 0;
+export const A4_EXPORT_PAGE_PADDING_RIGHT_PX = 0;
+export const A4_EXPORT_PAGE_PADDING_BOTTOM_PX = 0;
+export const A4_EXPORT_PAGE_PADDING_LEFT_PX = 0;
 export const ANSWER_FONT_FAMILY =
   '"Batang", "Nanum Myeongjo", "Noto Serif KR", "Times New Roman", serif';
 
@@ -392,10 +392,8 @@ export function applyPdfA4ExportFillLayout(pageEl, sheetEl, typography = {}, ref
   if (!pageEl || !sheetEl) return;
 
   const t = normalizeAnswerTypography(typography);
-  const innerWidth =
-    A4_EXPORT_PAGE_WIDTH_PX - A4_EXPORT_PAGE_PADDING_LEFT_PX - A4_EXPORT_PAGE_PADDING_RIGHT_PX;
-  const innerHeight =
-    A4_EXPORT_PAGE_HEIGHT_PX - A4_EXPORT_PAGE_PADDING_TOP_PX - A4_EXPORT_PAGE_PADDING_BOTTOM_PX;
+  const innerWidth = A4_EXPORT_PAGE_WIDTH_PX;
+  const innerHeight = A4_EXPORT_PAGE_HEIGHT_PX;
 
   applyAnswerSheetVars(pageEl, t);
   Object.assign(pageEl.style, {
@@ -404,11 +402,12 @@ export function applyPdfA4ExportFillLayout(pageEl, sheetEl, typography = {}, ref
     boxSizing: "border-box",
     overflow: "hidden",
     margin: "0",
-    padding: `${A4_EXPORT_PAGE_PADDING_TOP_PX}px ${A4_EXPORT_PAGE_PADDING_RIGHT_PX}px ${A4_EXPORT_PAGE_PADDING_BOTTOM_PX}px ${A4_EXPORT_PAGE_PADDING_LEFT_PX}px`,
+    padding: "0",
     background: "#ffffff",
     transform: "none",
     zoom: "1",
     position: "relative",
+    display: "block",
   });
 
   applyAnswerSheetVars(sheetEl, t);
@@ -418,8 +417,8 @@ export function applyPdfA4ExportFillLayout(pageEl, sheetEl, typography = {}, ref
     `${innerWidth - ANSWER_PADDING_LEFT_PX - ANSWER_PADDING_RIGHT_PX}px`
   );
   Object.assign(sheetEl.style, {
-    width: "100%",
-    height: "100%",
+    width: `${innerWidth}px`,
+    height: `${innerHeight}px`,
     maxWidth: "none",
     minWidth: "0",
     minHeight: "0",
@@ -431,6 +430,7 @@ export function applyPdfA4ExportFillLayout(pageEl, sheetEl, typography = {}, ref
     flexDirection: "column",
     overflow: "hidden",
     background: "#ffffff",
+    boxShadow: "none",
   });
 
   const header = sheetEl.querySelector(".answer-doc-header");
@@ -446,10 +446,11 @@ export function applyPdfA4ExportFillLayout(pageEl, sheetEl, typography = {}, ref
   if (body) {
     Object.assign(body.style, {
       position: "relative",
-      flex: "1",
+      flex: "1 1 auto",
       minHeight: "0",
       height: "auto",
       boxSizing: "border-box",
+      overflow: "hidden",
     });
   }
 

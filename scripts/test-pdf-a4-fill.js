@@ -80,19 +80,8 @@ async function main() {
 
     const page = document.createElement("section");
     page.className = "export-answer-page";
-    const inner = document.createElement("div");
-    inner.className = "export-answer-page-inner";
-    Object.assign(inner.style, {
-      width: "100%",
-      height: "100%",
-      boxSizing: "border-box",
-      overflow: "hidden",
-      margin: "0",
-      padding: "0",
-    });
     const sheet = sourceClone.cloneNode(true);
-    inner.appendChild(sheet);
-    page.appendChild(inner);
+    page.appendChild(sheet);
     mount.appendChild(page);
 
     typoMod.applyPdfA4ExportFillLayout(page, sheet, t, referenceEditor);
@@ -132,11 +121,11 @@ async function main() {
   const ok =
     result.after?.wrapper?.width === 794 &&
     result.after?.wrapper?.height === 1123 &&
-    result.after?.sheet?.offsetWidth >= 680 &&
-    result.after?.sheet?.offsetHeight >= 1040 &&
-    result.after?.rows25Height >= 980 &&
+    result.after?.sheet?.offsetWidth >= 790 &&
+    result.after?.sheet?.offsetHeight >= 1118 &&
+    result.after?.rows25Height >= 1080 &&
     result.after?.gapBelowLastRow != null &&
-    result.after.gapBelowLastRow <= 80 &&
+    result.after.gapBelowLastRow <= 8 &&
     result.canvas.lastInkY > 0;
 
   console.log(ok ? "PASS: A4 fill layout" : "FAIL: A4 fill layout");

@@ -64,19 +64,8 @@ async function main() {
     const pageNodes = audit.pagesToExport.map((clone) => {
       const page = document.createElement("section");
       page.className = "export-answer-page";
-      const inner = document.createElement("div");
-      inner.className = "export-answer-page-inner";
-      Object.assign(inner.style, {
-        width: "100%",
-        height: "100%",
-        boxSizing: "border-box",
-        overflow: "hidden",
-        margin: "0",
-        padding: "0",
-      });
       const sheet = clone.cloneNode(true);
-      inner.appendChild(sheet);
-      page.appendChild(inner);
+      page.appendChild(sheet);
       mount.appendChild(page);
       typoMod.applyPdfA4ExportFillLayout(page, sheet, t, referenceEditor);
       return page;
