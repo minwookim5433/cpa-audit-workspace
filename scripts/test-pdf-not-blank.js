@@ -55,6 +55,7 @@ async function main() {
     const audit = pagesMod.selectPagesForPdfExport(state.clones, { log: false });
     await captureMod.ensurePdfCaptureLibs();
     const referenceEditor = document.querySelector(".answer-doc-editor");
+    const referenceSheet = document.querySelector(".answer-doc-sheet");
     const t = typoMod.normalizeAnswerTypography(state.answerTypography);
     const mount = document.createElement("div");
     mount.style.cssText =
@@ -67,7 +68,7 @@ async function main() {
       const sheet = clone.cloneNode(true);
       page.appendChild(sheet);
       mount.appendChild(page);
-      typoMod.applyPdfA4ExportFillLayout(page, sheet, t, referenceEditor);
+      typoMod.applyPdfA4ExportFillLayout(page, sheet, t, referenceEditor, referenceSheet);
       return page;
     });
 

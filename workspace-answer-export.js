@@ -211,6 +211,9 @@ async function prepareOffscreenCapturePages(
   document.body.appendChild(mount);
 
   const t = normalizeAnswerTypography(typography);
+  const referenceSheet =
+    referenceEditor?.closest?.(".answer-doc-sheet") ||
+    document.querySelector(".answer-doc-sheet");
   const pages = [];
   const layoutLog = [];
 
@@ -224,13 +227,19 @@ async function prepareOffscreenCapturePages(
     mount.appendChild(page);
 
     const beforeSheet = measureAnswerPageLayout(sheet, `before-fill-${index + 1}`);
-    applyPdfA4ExportFillLayout(page, sheet, t, referenceEditor);
+    const fillMetrics = applyPdfA4ExportFillLayout(
+      page,
+      sheet,
+      t,
+      referenceEditor,
+      referenceSheet
+    );
 
     if (log) {
       page.style.outline = "2px solid red";
     }
 
-    layoutLog.push({ page: index + 1, beforeSheet });
+    layoutLog.push({ page: index + 1, beforeSheet, fillMetrics });
     pages.push(page);
   });
 
@@ -258,6 +267,9 @@ async function prepareOffscreenCapturePages(
         wrapperBottom: entry.after?.wrapperBottom,
         gapBelowLastRow: entry.after?.gapBelowLastRow,
         rowHeight: entry.rowMetrics?.rowHeight,
+        scale: entry.fillMetrics?.scale,
+        scaledFontSize: entry.fillMetrics?.scaledFontSize,
+        scaledLetterSpacing: entry.fillMetrics?.scaledLetterSpacing,
       }))
     );
     console.log(
@@ -271,8 +283,9 @@ async function prepareOffscreenCapturePages(
 
   if (referenceEditor) {
     const outputEditor = pages[0]?.querySelector(".answer-doc-editor");
+    const scale = layoutLog[0]?.fillMetrics?.scale ?? 1;
     if (outputEditor) {
-      assertAnswerExportTypographyCore(referenceEditor, outputEditor);
+      assertAnswerExportTypographyCore(referenceEditor, outputEditor, { scale });
     }
   }
 

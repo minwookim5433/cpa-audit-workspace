@@ -68,6 +68,7 @@ async function main() {
     }
     await captureMod.ensurePdfCaptureLibs();
     const referenceEditor = document.querySelector(".answer-doc-editor");
+    const referenceSheet = document.querySelector(".answer-doc-sheet");
     const t = typoMod.normalizeAnswerTypography(state.answerTypography);
 
     const mount = document.createElement("div");
@@ -84,7 +85,7 @@ async function main() {
     page.appendChild(sheet);
     mount.appendChild(page);
 
-    typoMod.applyPdfA4ExportFillLayout(page, sheet, t, referenceEditor);
+    typoMod.applyPdfA4ExportFillLayout(page, sheet, t, referenceEditor, referenceSheet);
     await typoMod.waitForExportLayout(document);
     const rowMetrics = typoMod.finalizePdfA4ExportRowHeights(sheet);
     await typoMod.waitForExportLayout(document);

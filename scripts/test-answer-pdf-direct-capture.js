@@ -6,6 +6,11 @@ const puppeteer = require("puppeteer");
 const PDF_PATH = process.argv[2] || "C:\\Users\\bnb12\\Desktop\\1-3 회계감사 문제(2025-2).pdf";
 const BASE = "http://localhost:3000";
 const CHROME = "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe";
+const PDF_EXPORT_SCALE = 794 / 560;
+
+function scaledFontPx(base) {
+  return Math.round(Number(base) * PDF_EXPORT_SCALE * 2) / 2;
+}
 
 const LINE1 = "① 첫 페이지 답안입니다.";
 const LINE2 = "② 두 번째 페이지 답안입니다.";
@@ -100,6 +105,7 @@ async function probePdfExport(page) {
     await captureMod.ensurePdfCaptureLibs();
     const t = typoMod.normalizeAnswerTypography(state.answerTypography);
     const referenceEditor = document.querySelector(".answer-doc-editor");
+    const referenceSheet = document.querySelector(".answer-doc-sheet");
 
     const mount = document.createElement("div");
     mount.style.cssText =
@@ -113,7 +119,7 @@ async function probePdfExport(page) {
       const sheet = clone.cloneNode(true);
       page.appendChild(sheet);
       mount.appendChild(page);
-      typoMod.applyPdfA4ExportFillLayout(page, sheet, t, referenceEditor);
+      typoMod.applyPdfA4ExportFillLayout(page, sheet, t, referenceEditor, referenceSheet);
       return page;
     });
 
@@ -211,9 +217,9 @@ async function main() {
     await setPageText(page, 0, LONG_TEXT);
     lastProbe = await probePdfExport(page);
     const typoC =
-      lastProbe.exportStyle?.fontSize === "8px" &&
-      (lastProbe.exportStyle?.letterSpacing === "-1.5px" ||
-        lastProbe.exportStyle?.letterSpacing === "-1.5px");
+      lastProbe.exportStyle?.fontSize === `${scaledFontPx(8)}px` &&
+      (lastProbe.exportStyle?.letterSpacing === `${Math.round(-1.5 * PDF_EXPORT_SCALE * 10) / 10}px` ||
+        lastProbe.exportStyle?.letterSpacing === "-2.1px");
     record(
       results,
       "C: 8px / -1.5px → PDF 1페이지 + 타이포 유지",
@@ -239,8 +245,9 @@ async function main() {
     await setPageText(page, 0, LONG_TEXT);
     lastProbe = await probePdfExport(page);
     const typoD =
-      lastProbe.exportStyle?.fontSize === "16px" &&
-      (lastProbe.exportStyle?.letterSpacing === "0.5px" || lastProbe.exportStyle?.letterSpacing === "0.5px");
+      lastProbe.exportStyle?.fontSize === `${scaledFontPx(16)}px` &&
+      (lastProbe.exportStyle?.letterSpacing === `${Math.round(0.5 * PDF_EXPORT_SCALE * 10) / 10}px` ||
+        lastProbe.exportStyle?.letterSpacing === "0.7px");
     record(
       results,
       "D: 16px / 0.5px → PDF 1페이지 (자동 분할 없음)",

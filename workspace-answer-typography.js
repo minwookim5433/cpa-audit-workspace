@@ -365,35 +365,78 @@ export function getAnswerEditorStyleSnapshot(editorEl) {
   };
 }
 
-export function assertAnswerExportTypographyCore(referenceEl, outputEl) {
+export function computePdfExportLayoutScale(
+  referenceSheet,
+  exportWidth = A4_EXPORT_PAGE_WIDTH_PX
+) {
+  const refWidth =
+    referenceSheet?.offsetWidth ||
+    referenceSheet?.getBoundingClientRect?.().width ||
+    ANSWER_PAGE_WIDTH_PX;
+  if (!refWidth || refWidth <= 0) return exportWidth / ANSWER_PAGE_WIDTH_PX;
+  return exportWidth / refWidth;
+}
+
+export function scalePdfTypographySize(value, scale) {
+  const n = Number(value);
+  if (Number.isNaN(n)) return value;
+  return Math.round(n * scale * 2) / 2;
+}
+
+export function scalePdfLetterSpacing(value, scale) {
+  const n = Number(value);
+  if (Number.isNaN(n)) return value;
+  return Math.round(n * scale * 10) / 10;
+}
+
+export function assertAnswerExportTypographyCore(referenceEl, outputEl, { scale = 1 } = {}) {
   const ref = getAnswerEditorStyleSnapshot(referenceEl);
   const out = getAnswerEditorStyleSnapshot(outputEl);
   if (!ref || !out) return;
 
+  const expectedFontSize = `${scalePdfTypographySize(parseFloat(ref.fontSize), scale)}px`;
+  const expectedLetterSpacing = `${scalePdfLetterSpacing(parseFloat(ref.letterSpacing), scale)}px`;
+
   const mismatches = [];
-  if (!pxValuesClose(ref.fontSize, out.fontSize)) {
-    mismatches.push(["font-size", ref.fontSize, out.fontSize]);
+  if (!pxValuesClose(expectedFontSize, out.fontSize)) {
+    mismatches.push(["font-size", expectedFontSize, out.fontSize]);
   }
-  if (!pxValuesClose(ref.letterSpacing, out.letterSpacing, 0.05)) {
-    mismatches.push(["letter-spacing", ref.letterSpacing, out.letterSpacing]);
+  if (!pxValuesClose(expectedLetterSpacing, out.letterSpacing, 0.05)) {
+    mismatches.push(["letter-spacing", expectedLetterSpacing, out.letterSpacing]);
   }
   if (!fontFamiliesMatch(ref.fontFamily, out.fontFamily)) {
     mismatches.push(["font-family", ref.fontFamily, out.fontFamily]);
   }
 
   if (mismatches.length) {
-    const detail = mismatches.map(([k, a, b]) => `${k}: ref=${a} out=${b}`).join("; ");
+    const detail = mismatches.map(([k, a, b]) => `${k}: expected=${a} out=${b}`).join("; ");
     console.error("[answer-export] typography mismatch:", detail);
     throw new Error("답안 출력 스타일을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
   }
 }
 
-export function applyPdfA4ExportFillLayout(pageEl, sheetEl, typography = {}, referenceEditor = null) {
-  if (!pageEl || !sheetEl) return;
+export function applyPdfA4ExportFillLayout(
+  pageEl,
+  sheetEl,
+  typography = {},
+  referenceEditor = null,
+  referenceSheet = null
+) {
+  if (!pageEl || !sheetEl) return { scale: 1 };
 
   const t = normalizeAnswerTypography(typography);
   const innerWidth = A4_EXPORT_PAGE_WIDTH_PX;
   const innerHeight = A4_EXPORT_PAGE_HEIGHT_PX;
+  const scale = computePdfExportLayoutScale(referenceSheet, innerWidth);
+  const refSnapshot = referenceEditor ? getAnswerEditorStyleSnapshot(referenceEditor) : null;
+  const baseFontSize = refSnapshot ? parseFloat(refSnapshot.fontSize) : t.fontSize;
+  const baseLetterSpacing = refSnapshot
+    ? parseFloat(normalizeLetterSpacingCss(refSnapshot.letterSpacing))
+    : t.letterSpacing;
+  const scaledFontSize = scalePdfTypographySize(baseFontSize, scale);
+  const scaledLetterSpacing = scalePdfLetterSpacing(baseLetterSpacing, scale);
+  const scaledPadL = scalePdfTypographySize(ANSWER_PADDING_LEFT_PX, scale);
+  const scaledPadR = scalePdfTypographySize(ANSWER_PADDING_RIGHT_PX, scale);
 
   applyAnswerSheetVars(pageEl, t);
   Object.assign(pageEl.style, {
@@ -414,8 +457,12 @@ export function applyPdfA4ExportFillLayout(pageEl, sheetEl, typography = {}, ref
   sheetEl.style.setProperty("--answer-page-width", `${innerWidth}px`);
   sheetEl.style.setProperty(
     "--answer-content-width",
-    `${innerWidth - ANSWER_PADDING_LEFT_PX - ANSWER_PADDING_RIGHT_PX}px`
+    `${innerWidth - scaledPadL - scaledPadR}px`
   );
+  sheetEl.style.setProperty("--answer-padding-left", `${scaledPadL}px`);
+  sheetEl.style.setProperty("--answer-padding-right", `${scaledPadR}px`);
+  sheetEl.style.setProperty("--answer-font-size", `${scaledFontSize}px`);
+  sheetEl.style.setProperty("--answer-letter-spacing", `${scaledLetterSpacing}px`);
   Object.assign(sheetEl.style, {
     width: `${innerWidth}px`,
     height: `${innerHeight}px`,
@@ -441,6 +488,10 @@ export function applyPdfA4ExportFillLayout(pageEl, sheetEl, typography = {}, ref
 
   if (header) {
     Object.assign(header.style, { flexShrink: "0" });
+    const title = header.querySelector(".answer-doc-title");
+    const pageLabel = header.querySelector(".answer-doc-page");
+    if (title) title.style.fontSize = `${scalePdfTypographySize(15.2, scale)}px`;
+    if (pageLabel) pageLabel.style.fontSize = `${scalePdfTypographySize(11.5, scale)}px`;
   }
 
   if (body) {
@@ -460,7 +511,7 @@ export function applyPdfA4ExportFillLayout(pageEl, sheetEl, typography = {}, ref
       inset: "0",
       display: "grid",
       gridTemplateRows: "repeat(25, 1fr)",
-      padding: `0 ${ANSWER_PADDING_RIGHT_PX}px 0 ${ANSWER_PADDING_LEFT_PX}px`,
+      padding: `0 ${scaledPadR}px 0 ${scaledPadL}px`,
       boxSizing: "border-box",
       pointerEvents: "none",
       zIndex: "0",
@@ -480,9 +531,7 @@ export function applyPdfA4ExportFillLayout(pageEl, sheetEl, typography = {}, ref
     if (referenceEditor) {
       copyExportStylesFromElement(referenceEditor, editor, [
         "fontFamily",
-        "fontSize",
         "fontWeight",
-        "letterSpacing",
         "textAlign",
         "whiteSpace",
         "overflowWrap",
@@ -494,18 +543,18 @@ export function applyPdfA4ExportFillLayout(pageEl, sheetEl, typography = {}, ref
     } else {
       Object.assign(editor.style, {
         fontFamily: ANSWER_FONT_FAMILY,
-        fontSize: `${t.fontSize}px`,
-        letterSpacing: `${t.letterSpacing}px`,
         whiteSpace: "pre-wrap",
         wordBreak: "break-all",
         overflowWrap: "anywhere",
       });
     }
     Object.assign(editor.style, {
+      fontSize: `${scaledFontSize}px`,
+      letterSpacing: `${scaledLetterSpacing}px`,
       position: "absolute",
       inset: "0",
       zIndex: "1",
-      padding: `0 ${ANSWER_PADDING_RIGHT_PX}px 0 ${ANSWER_PADDING_LEFT_PX}px`,
+      padding: `0 ${scaledPadR}px 0 ${scaledPadL}px`,
       margin: "0",
       width: "100%",
       maxWidth: "none",
@@ -515,6 +564,8 @@ export function applyPdfA4ExportFillLayout(pageEl, sheetEl, typography = {}, ref
       outline: "none",
     });
   }
+
+  return { scale, scaledFontSize, scaledLetterSpacing, scaledPadL, scaledPadR };
 }
 
 export function finalizePdfA4ExportRowHeights(sheetEl) {
