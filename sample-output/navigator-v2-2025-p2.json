@@ -1,0 +1,194 @@
+{
+  "schemaVersion": "case-navigator-v2",
+  "year": "2025",
+  "problemNumber": 2,
+  "problemTitle": "대주제",
+  "totalQuestions": 6,
+  "contextGroups": [
+    {
+      "contextId": "context-1",
+      "appliesToQuestions": [
+        1
+      ],
+      "summaryBullets": [
+        "소인국회계사는 소규모기업 (주)릴리펏의 감사위험평가 절차 수행 중 중요 왜곡 표시 위험 발견",
+        "주어진 수준의 감사위험에서 감사인이 수용 가능한 적발위험의 수준 결정 필요"
+      ]
+    },
+    {
+      "contextId": "context-2",
+      "appliesToQuestions": [
+        2
+      ],
+      "summaryBullets": [
+        "반도체 제품을 생산하는 (주)새별전자의 현장 책임 회계사가 감사 계획 시 상황 확인",
+        "유의적 위험 판단을 위한 최소한 고려해야 할 사항 두 가지 필요"
+      ]
+    },
+    {
+      "contextId": "context-3",
+      "appliesToQuestions": [
+        3,
+        4,
+        5,
+        6
+      ],
+      "summaryBullets": [
+        "(주)브로콜리의 20x5년 감사 수행 중 주요 재무정보 및 관련 정보 파악",
+        "매출채권의 급격한 증가에 대한 우려",
+        "매출 인식 방식 변경에 대한 의문",
+        "포인트 부채의 적정성에 대한 의문",
+        "부정한 재무보고에 대한 커뮤니케이션 필요성"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "questionNumber": 1,
+      "contextId": "context-1",
+      "originalText": "소인국회계사는 소규모기업인(주)릴리펏의 감사위험평가절차수행과정에서 재무제표의 중요왜곡 표시위험에 영향을 줄 수 있는 다음사항을 발견하였다. 소인국회계사는 주어진수준의 감사위험에서 감사인이 수용가능한 적발위험의 수준을 결정하고자 한다. 위의 각 항목이 수용가능한 적발위험의 수준에 미치는 영향을 기재하시오.",
+      "coreTopic": "감사위험 평가",
+      "scoringKeywords": [
+        "감사위험",
+        "적발위험",
+        "소규모기업",
+        "중요왜곡"
+      ],
+      "relatedStandards": [
+        {
+          "standardNumber": "KSA 315",
+          "standardName": "위험평가 및 감사대응"
+        }
+      ]
+    },
+    {
+      "questionNumber": 2,
+      "contextId": "context-2",
+      "originalText": "중요왜곡표시위험을 식별하고 평가하기 위해 감사인은 식별된 위험 중에 유의적이라고 판단되는 것이 있는지를 결정하여야 한다. 반도체제품을 생산하는(주)새별전자의 현장 책임회계사인이 두상 회계사는 감사계획 시 다음과 같은 상황을 확인하였다. [상황] 이두상회계사가 식별된 위험이 유의적인지 판단할 때, 위의 상황과 관련하여 최소한으로 고려할 사항 두 가지를 각각 2줄 이내로 서술하시오.",
+      "coreTopic": "유의적 위험 판단",
+      "scoringKeywords": [
+        "유의적 위험",
+        "식별된 위험",
+        "감사계획",
+        "상황 고려"
+      ],
+      "relatedStandards": [
+        {
+          "standardNumber": "KSA 315",
+          "standardName": "위험평가 및 감사대응"
+        }
+      ]
+    },
+    {
+      "questionNumber": 3,
+      "contextId": "context-3",
+      "originalText": "최고집회계사는(주)브로콜리의20x5년매출채권의 급격한 증가에 의구심을 갖고 있다. 수습회계사인 박초보 회계사는 재무제표의 자료를 그대로 사용하여 20x4년과 20x5년의 매출채권 회전율을 최고집회계사에게 제시하였다. 하지만 최고집회계사는 20x5년에(주)브로콜리의 매출인식 회계처리가 바뀌었으므로 박초보 회계사가 수행한 분석적 절차가 적합하지 않다고 판단하였다. 최고집회계사가 적절하다고 판단하는 분석적 절차 중 비율 분석 두 가지를 기재하시오.",
+      "coreTopic": "분석적 절차",
+      "scoringKeywords": [
+        "매출채권",
+        "회전율",
+        "분석적 절차",
+        "비율 분석"
+      ],
+      "relatedStandards": [
+        {
+          "standardNumber": "KSA 330",
+          "standardName": "감사인의 대응"
+        }
+      ]
+    },
+    {
+      "questionNumber": 4,
+      "contextId": "context-3",
+      "originalText": "최고집회계사는 20x5년(주)브로콜리가 매출인식 방식을 변경한 근거가 되는 용역의 ‘통제’에 대해 의문을 갖고 있다. 하지만 수익인식에 대한 회계원칙은 상이하게 해석될 수 있다. 위의 상황에서 최고집회계사가 수익 인식에 관련된 회계정책의 적용에 대한 감사증거를 확보하기 위해 회계감사기준에 근거하여 가장 적합한 방법 한 가지만 서술하시오.",
+      "coreTopic": "수익 인식 감사증거",
+      "scoringKeywords": [
+        "수익 인식",
+        "회계정책",
+        "감사증거",
+        "통제"
+      ],
+      "relatedStandards": [
+        {
+          "standardNumber": "KSA 340",
+          "standardName": "감사증거"
+        }
+      ]
+    },
+    {
+      "questionNumber": 5,
+      "contextId": "context-3",
+      "originalText": "최고집회계사는(주)브로콜리가 고객에게 부여하여 인식한 포인트 부채(이연수익)의 적정성에 의문을 품고 있다. 최고집회계사는 해당 부채에 대해 유의적 위험을 초래하는 회계추정치로 판단하고 이를 평가하고자 한다. 회계감사기준에 근거하여 최고집회계사가 고려해야 할 평가사항 세 가지를 서술하시오.",
+      "coreTopic": "회계추정치 평가",
+      "scoringKeywords": [
+        "포인트 부채",
+        "이연수익",
+        "유의적 위험",
+        "회계추정치"
+      ],
+      "relatedStandards": [
+        {
+          "standardNumber": "KSA 540",
+          "standardName": "회계추정치"
+        }
+      ]
+    },
+    {
+      "questionNumber": 6,
+      "contextId": "context-3",
+      "originalText": "최고집회계사는(주)브로콜리 경영진의 부정한 재무보고에 관한 증거를 입수하여 지배기구에게 알리는 것이 필요하다고 판단하였다. 다음 항목별로 최고집회계사가 부정한 재무보고와 관련하여(주)브로콜리의 지배기구와 수행하려는 커뮤니케이션이 적절한지 여부를 기재하고, 적절하지 않은 경우 그 이유를 2줄 이내로 서술하시오.",
+      "coreTopic": "부정한 재무보고 커뮤니케이션",
+      "scoringKeywords": [
+        "부정한 재무보고",
+        "지배기구",
+        "커뮤니케이션",
+        "적절성"
+      ],
+      "relatedStandards": [
+        {
+          "standardNumber": "KSA 260",
+          "standardName": "지배기구와의 커뮤니케이션"
+        }
+      ]
+    }
+  ],
+  "preExtraction": {
+    "detectedNumbers": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "expectedCount": 6,
+    "structureHints": [
+      "각 물음은 독립적",
+      "물음 범위 공통 상황",
+      "[상황] 블록",
+      "<주요 재무정보>",
+      "(계속) 페이지 연속"
+    ],
+    "extractedLength": 2740,
+    "problemTextExtracted": true,
+    "startIndex": 2088,
+    "endIndex": 4829
+  },
+  "extractionValidation": {
+    "complete": true,
+    "errors": [],
+    "warnings": [],
+    "detectedNumbers": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "expectedCount": 6,
+    "actualCount": 6,
+    "missing": []
+  },
+  "extractionStatus": "complete"
+}

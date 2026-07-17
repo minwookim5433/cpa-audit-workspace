@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CPA 답안 연습장</title>
+  <link rel="stylesheet" href="/node_modules/pdfjs-dist/web/pdf_viewer.css">
+  <link rel="stylesheet" href="workspace.css">
+</head>
+<body>
+  <div id="app-root" class="app-root app-mvp">
+    <nav class="app-main-nav mvp-hidden" aria-label="메인 메뉴" hidden>
+      <span class="app-brand">회계감사 Workspace</span>
+      <button type="button" class="app-main-nav-btn is-active" data-main-view="library">📚 Problem Library</button>
+      <button type="button" class="app-main-nav-btn" data-main-view="solve">✍ 문제 풀기</button>
+      <button type="button" class="app-main-nav-btn" data-main-view="review">📖 Review Notebook</button>
+      <button type="button" class="app-main-nav-btn" data-main-view="settings">⚙ Settings</button>
+    </nav>
+
+    <div id="pl-view" class="app-view mvp-hidden" hidden>
+      <div class="pl-layout">
+        <div class="pl-list-pane">
+          <header class="pl-header">
+            <div class="pl-header-row">
+              <h1 class="pl-title">Problem Library</h1>
+              <button type="button" id="pl-add-btn" class="pl-btn pl-btn-primary">+ 문제 등록</button>
+            </div>
+            <div class="pl-toolbar">
+              <input type="search" id="pl-search" class="pl-search" placeholder="제목, 출처, 연도, 태그, 메모 검색…" />
+              <select id="pl-filter" class="pl-select" aria-label="필터">
+                <option value="all">전체</option>
+                <option value="past_exam">기출</option>
+                <option value="mock_exam">모의</option>
+                <option value="book">연습서</option>
+                <option value="custom">직접추가</option>
+                <option value="favorite">즐겨찾기</option>
+                <option value="review_needed">복습필요</option>
+                <option value="unsolved">미풀이</option>
+              </select>
+              <select id="pl-sort" class="pl-select" aria-label="정렬">
+                <option value="createdDesc">최근 등록</option>
+                <option value="lastSolvedDesc">최근 풀이</option>
+                <option value="attemptDesc">풀이 횟수</option>
+                <option value="yearDesc">연도순</option>
+                <option value="titleAsc">이름순</option>
+              </select>
+            </div>
+          </header>
+          <div id="pl-grid" class="pl-grid"></div>
+        </div>
+
+        <aside id="pl-detail-pane" class="pl-detail-pane">
+          <div id="pl-detail-empty" class="pl-detail-empty">
+            <p>문제를 선택하세요</p>
+            <p class="pl-muted">카드를 클릭하면 상세 정보가 표시됩니다.</p>
+          </div>
+          <div id="pl-detail" class="pl-detail-inner" hidden>
+            <header class="pl-detail-header">
+              <h2 id="pl-detail-title" class="pl-detail-title"></h2>
+              <div class="pl-detail-actions">
+                <button type="button" id="pl-ai-tag-btn" class="pl-btn">태그 추천</button>
+                <button type="button" id="pl-detail-delete" class="pl-btn pl-btn-danger">삭제</button>
+                <button type="button" class="pl-btn pl-btn-primary" data-solve-problem>문제 풀기</button>
+              </div>
+            </header>
+            <div id="pl-tag-suggestions" class="pl-tag-suggestions" hidden></div>
+            <div id="pl-detail-preview" class="pl-detail-preview"></div>
+            <dl id="pl-detail-meta" class="pl-info-list pl-detail-meta"></dl>
+            <section class="pl-detail-section">
+              <h3>태그</h3>
+              <div id="pl-detail-tags"></div>
+            </section>
+            <section class="pl-detail-section">
+              <h3>메모</h3>
+              <textarea id="pl-detail-notes" class="pl-notes" rows="4" placeholder="문제 관련 메모"></textarea>
+            </section>
+            <section class="pl-detail-section">
+              <h3>풀이 기록</h3>
+              <div id="pl-detail-attempts" class="pl-attempt-list"></div>
+            </section>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div id="solve-view" class="app-view is-active">
+  <div class="ws-app" id="ws-app">
+    <header class="ws-toolbar">
+      <span class="ws-brand">CPA 답안 연습장</span>
+      <div class="ws-toolbar-divider"></div>
+      <input type="file" id="ws-pdf-input" accept="application/pdf,.pdf" hidden />
+      <div class="ws-doc-select-wrap">
+        <select id="ws-doc-select" class="ws-doc-select" aria-label="시험지 PDF 선택">
+          <option value="">시험지 PDF 선택</option>
+        </select>
+        <button type="button" id="ws-doc-manage" class="ws-btn" title="시험지 관리">⚙</button>
+      </div>
+      <button type="button" id="ws-preview-btn" class="ws-btn">답안지 미리보기</button>
+      <span id="ws-save-status" class="ws-save-status">저장됨</span>
+      <span id="ws-status" class="ws-status" aria-live="polite"></span>
+    </header>
+
+    <div id="ws-doc-manage-modal" class="ws-modal ws-modal-sm" hidden>
+      <div class="ws-modal-dialog">
+        <header class="ws-modal-header">
+          <h2>시험지 관리</h2>
+          <button type="button" class="ws-btn ws-modal-close" data-manage-close>✕</button>
+        </header>
+        <div class="ws-modal-body">
+          <button type="button" id="ws-pdf-btn" class="ws-btn ws-btn-primary">+ 새 시험지 추가</button>
+          <ul id="ws-pdf-list" class="ws-pdf-list"></ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="ws-main">
+      <aside class="ws-sidebar">
+        <nav class="ws-sidebar-nav">
+          <button type="button" class="ws-nav-btn is-active" data-panel="timer">⏱ 타이머</button>
+          <button type="button" class="ws-nav-btn mvp-hidden" data-panel="bookmarks" hidden>🔖 북마크</button>
+          <button type="button" class="ws-nav-btn mvp-hidden" data-panel="search" hidden>🔍 찾기</button>
+          <button type="button" class="ws-nav-btn mvp-hidden" data-panel="attempts" hidden>📚 풀이 기록</button>
+          <button type="button" class="ws-nav-btn mvp-hidden" data-panel="memo" hidden>📝 메모</button>
+        </nav>
+
+        <div id="ws-panel-timer" class="ws-sidebar-panel is-active">
+          <h3 class="ws-panel-title">시험 타이머</h3>
+          <div id="ws-timer-display" class="ws-timer-display">00:00</div>
+          <div class="ws-timer-actions">
+            <button type="button" id="ws-timer-start" class="ws-btn">시작</button>
+            <button type="button" id="ws-timer-pause" class="ws-btn">일시정지</button>
+            <button type="button" id="ws-timer-reset" class="ws-btn">초기화</button>
+          </div>
+          <button type="button" id="ws-exam-end-btn" class="ws-btn ws-btn-primary ws-timer-end-btn">시험 종료</button>
+        </div>
+
+        <div id="ws-panel-bookmarks" class="ws-sidebar-panel mvp-hidden" hidden>
+          <h3 class="ws-panel-title">북마크</h3>
+          <div id="ws-bookmark-panel"></div>
+        </div>
+
+        <div id="ws-panel-attempts" class="ws-sidebar-panel mvp-hidden" hidden>
+          <h3 class="ws-panel-title">풀이 기록</h3>
+          <div class="ws-attempt-history-controls">
+            <select id="ws-attempt-filter" class="ws-tool-select" aria-label="필터">
+              <option value="all">전체</option>
+              <option value="past_exam">기출</option>
+              <option value="mock_exam">모의고사</option>
+              <option value="book">연습서</option>
+              <option value="draft">초안</option>
+              <option value="completed">완료</option>
+              <option value="review">복습 필요</option>
+            </select>
+            <select id="ws-attempt-sort" class="ws-tool-select" aria-label="정렬">
+              <option value="updatedDesc">최근 수정순</option>
+              <option value="createdDesc">최근 풀이순</option>
+              <option value="createdAsc">오래된 순</option>
+              <option value="elapsedDesc">사용 시간순</option>
+            </select>
+          </div>
+          <div id="ws-attempt-history-list" class="ws-attempt-history-list"></div>
+        </div>
+
+        <div id="ws-panel-memo" class="ws-sidebar-panel mvp-hidden" hidden>
+          <h3 class="ws-panel-title">메모</h3>
+          <nav class="ws-memo-tabs">
+            <button type="button" class="ws-memo-tab is-active" data-memo-tab="attempt">이번 풀이 메모</button>
+            <button type="button" class="ws-memo-tab" data-memo-tab="problem">문제 공통 메모</button>
+          </nav>
+          <div class="ws-memo-panels">
+            <div class="ws-memo-panel is-active" data-memo-panel="attempt">
+              <textarea id="ws-attempt-memo" class="ws-memo-textarea" rows="8" placeholder="이번 풀이에서 막힌 점, 해설 확인 필요 등"></textarea>
+            </div>
+            <div class="ws-memo-panel" data-memo-panel="problem">
+              <textarea id="ws-problem-memo" class="ws-memo-textarea" rows="8" placeholder="자주 틀리는 논점, 다음에 다시 볼 것"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div id="ws-panel-search" class="ws-sidebar-panel mvp-hidden" hidden>
+          <h3 class="ws-panel-title">시험지 찾기</h3>
+          <p id="ws-search-notice" class="ws-panel-desc"></p>
+          <div class="ws-search-group ws-sidebar-search">
+            <input type="search" id="ws-search-input" class="ws-search-input" placeholder="Ctrl+F" />
+            <button type="button" id="ws-search-prev" class="ws-btn">◀</button>
+            <button type="button" id="ws-search-next" class="ws-btn">▶</button>
+          </div>
+          <div id="ws-search-results"></div>
+        </div>
+
+        <div id="ws-panel-coach" class="ws-sidebar-panel" hidden>
+          <h3 class="ws-panel-title">Answer Coach</h3>
+          <pre id="ws-coach-result" class="ws-coach-result">Answer Coach는 추후 제공 예정입니다.</pre>
+        </div>
+
+        <div id="ws-panel-wrong-notes" class="ws-sidebar-panel">
+          <h3 class="ws-panel-title">오답노트</h3>
+          <div id="ws-wrong-notes-list"></div>
+        </div>
+
+        <div id="ws-panel-stats" class="ws-sidebar-panel">
+          <h3 class="ws-panel-title">반복 실수 분석</h3>
+          <div id="ws-stats-dashboard"></div>
+        </div>
+      </aside>
+
+      <div class="ws-center">
+        <div class="ws-mobile-tabs" id="ws-mobile-tabs">
+          <button type="button" class="ws-tab-btn is-active" data-tab="exam">시험지</button>
+          <button type="button" class="ws-tab-btn" data-tab="answer">답안</button>
+        </div>
+
+        <div class="ws-view-modes" id="ws-view-modes">
+          <button type="button" class="ws-view-btn is-active" data-view="equal" title="균등 보기">균등</button>
+          <button type="button" class="ws-view-btn" data-view="exam" title="문제지 크게">문제지↑</button>
+          <button type="button" class="ws-view-btn" data-view="answer" title="답안 크게">답안↑</button>
+        </div>
+
+        <div class="ws-split-pane" id="ws-split-pane">
+          <section class="ws-pane ws-pane-exam is-active" id="ws-pane-exam">
+            <p id="ws-exam-hint" class="ws-exam-hint">시험지 PDF를 선택하세요.</p>
+            <div class="ws-exam-nav">
+              <div class="ws-exam-nav-row">
+                <button type="button" id="ws-prev-page" class="ws-btn ws-btn-fixed" disabled title="이전">◀</button>
+                <span class="ws-page-indicator">
+                  <input type="number" id="ws-page-input" min="1" value="1" class="ws-input-short" />
+                  <span id="ws-page-label">/ —</span>
+                </span>
+                <button type="button" id="ws-next-page" class="ws-btn ws-btn-fixed" disabled title="다음">▶</button>
+              </div>
+              <div class="ws-exam-nav-row">
+                <button type="button" id="ws-zoom-out" class="ws-btn ws-btn-fixed" title="축소">−</button>
+                <span id="ws-zoom-label" class="ws-zoom-label-fixed">100%</span>
+                <button type="button" id="ws-zoom-in" class="ws-btn ws-btn-fixed" title="확대">+</button>
+                <button type="button" id="ws-fit-width" class="ws-btn ws-btn-fit" title="너비 맞춤">너비 맞춤</button>
+              </div>
+              <div class="ws-exam-nav-row ws-exam-tools-row">
+                <button type="button" class="ws-exam-tool-btn ws-btn-fixed is-active" data-tool="view" title="보기">보기</button>
+                <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="underline" title="밑줄">밑줄</button>
+                <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="highlighter" title="형광펜">형광펜</button>
+                <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="pen" title="펜">펜</button>
+                <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="eraser" title="지우개">지우개</button>
+                <span id="ws-exam-color-wrap" class="ws-exam-color-wrap" hidden>
+                  <select id="ws-exam-line-color" class="ws-tool-select" title="밑줄 색상">
+                    <option value="red">빨강</option>
+                    <option value="blue">파랑</option>
+                    <option value="black">검정</option>
+                  </select>
+                  <select id="ws-exam-highlight-color" class="ws-tool-select" title="형광펜 색" hidden>
+                    <option value="yellow">노랑</option>
+                    <option value="green">초록</option>
+                    <option value="pink">분홍</option>
+                  </select>
+                  <select id="ws-exam-pen-color" class="ws-tool-select" title="펜 색상" hidden>
+                    <option value="red">빨강</option>
+                    <option value="blue">파랑</option>
+                    <option value="black">검정</option>
+                  </select>
+                  <select id="ws-exam-pen-width" class="ws-tool-select" title="펜 굵기" hidden>
+                    <option value="thin">가늘게</option>
+                    <option value="normal">보통</option>
+                  </select>
+                </span>
+                <button type="button" id="ws-annot-undo" class="ws-btn ws-btn-fixed" title="주석 실행 취소">↶</button>
+                <button type="button" id="ws-annot-clear-page" class="ws-btn ws-btn-fixed" title="현재 페이지 주석 삭제">🗑</button>
+              </div>
+            </div>
+            <div class="ws-pane-scroll ws-exam-scroll" id="ws-exam">
+              <div id="ws-exam-pages" class="ws-exam-pages"></div>
+              <div id="ws-float-toolbar" class="ws-float-toolbar" hidden>
+                <button type="button" class="ws-float-expand" id="ws-float-expand" title="펼치기">✎</button>
+                <div class="ws-float-toolbar-inner">
+                  <span class="ws-float-handle" id="ws-float-handle" title="드래그하여 이동">⠿</span>
+                  <button type="button" class="ws-float-btn" data-draw-action="undo" title="실행 취소">↶</button>
+                  <button type="button" class="ws-float-btn" data-draw-action="redo" title="다시 실행">↷</button>
+                  <button type="button" class="ws-float-btn" data-draw-action="deleteSelected" title="선택 삭제">⌫</button>
+                  <button type="button" class="ws-float-btn" data-draw-action="clearPage" title="페이지 주석 삭제">🗑</button>
+                  <button type="button" class="ws-float-btn ws-float-orient" id="ws-float-orient" title="세로 배치" aria-pressed="false">⇅</button>
+                  <button type="button" class="ws-float-minimize" id="ws-float-minimize" title="최소화">—</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="ws-v-resizer" id="ws-v-resizer" role="separator" aria-orientation="vertical" tabindex="0"></div>
+
+          <section class="ws-pane ws-pane-answer is-active" id="ws-pane-answer">
+            <div class="ws-answer-toolbar">
+              <button type="button" id="ws-ans-prev" class="ws-btn" disabled>◀ 이전</button>
+              <span class="ws-ans-page-indicator">
+                답안지 <input type="number" id="ws-ans-page-input" min="1" max="10" value="1" class="ws-input-short" />
+                / <span id="ws-ans-page-label">10</span>
+              </span>
+              <button type="button" id="ws-ans-next" class="ws-btn">다음 ▶</button>
+              <div class="ws-toolbar-divider"></div>
+              <button type="button" id="ws-undo" class="ws-btn" title="실행 취소">↶</button>
+              <button type="button" id="ws-redo" class="ws-btn" title="다시 실행">↷</button>
+              <div class="ws-toolbar-divider"></div>
+              <div class="ws-format-panel" id="ws-format-panel">
+                <span class="ws-format-target-label" id="ws-format-target-label">전체 기본 서식</span>
+                <label class="ws-type-control" title="글자 크기">
+                  <span class="ws-type-label">글자 크기</span>
+                  <input type="range" id="ws-font-size-range" min="8" max="18" step="0.5" value="14" />
+                  <input type="number" id="ws-font-size-input" class="ws-type-number" min="8" max="18" step="0.5" value="14" />
+                  <span class="ws-type-unit">px</span>
+                </label>
+                <label class="ws-type-control" title="자간">
+                  <span class="ws-type-label">자간</span>
+                  <input type="range" id="ws-letter-spacing-range" min="-2" max="1" step="0.1" value="0" />
+                  <input type="number" id="ws-letter-spacing-input" class="ws-type-number" min="-2" max="1" step="0.1" value="0" />
+                  <span class="ws-type-unit">px</span>
+                </label>
+              </div>
+              <div class="ws-toolbar-divider"></div>
+              <button type="button" id="ws-number" class="ws-btn">번호</button>
+              <button type="button" id="ws-del-line" class="ws-btn">줄 삭제</button>
+              <button type="button" id="ws-answer-preview-btn" class="ws-btn">미리보기</button>
+              <span id="ws-row-stats" class="ws-input-stats">0 / 25행 · 0 / 250행</span>
+            </div>
+            <div class="ws-pane-scroll ws-answer-scroll" id="ws-answer-editor"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+    </div>
+
+    <div id="review-view" class="app-view mvp-hidden" hidden>
+      <div class="pl-placeholder-view">
+        <h1>📖 Review Notebook</h1>
+        <p>오답·복습 노트 기능은 추후 구현 예정입니다.</p>
+        <p class="pl-muted">Problem Library에서 「복습필요」 필터로 문제를 관리할 수 있습니다.</p>
+      </div>
+    </div>
+
+    <div id="settings-view" class="app-view mvp-hidden" hidden>
+      <div class="pl-placeholder-view">
+        <h1>⚙ Settings</h1>
+        <p>워크스페이스 설정은 추후 구현 예정입니다.</p>
+        <p class="pl-muted">데이터는 브라우저 IndexedDB에 저장됩니다.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="pl-add-modal" class="ws-modal pl-add-modal" hidden>
+    <div class="ws-modal-dialog ws-modal-lg" role="dialog" aria-modal="true">
+      <header class="ws-modal-header">
+        <h2>문제 등록</h2>
+        <button type="button" class="ws-btn ws-modal-close" data-add-close>✕</button>
+      </header>
+      <nav class="pl-add-tabs">
+        <button type="button" class="pl-add-tab is-active" data-add-tab="pdf">PDF 업로드</button>
+        <button type="button" class="pl-add-tab" data-add-tab="image">이미지 업로드</button>
+        <button type="button" class="pl-add-tab" data-add-tab="screenshot">스크린샷 붙여넣기</button>
+        <button type="button" class="pl-add-tab" data-add-tab="manual">직접 생성</button>
+      </nav>
+      <div class="ws-modal-body">
+        <div class="pl-add-panel" data-add-panel="pdf">
+          <input type="file" id="pl-pdf-input" accept="application/pdf,.pdf" />
+        </div>
+        <div class="pl-add-panel" data-add-panel="image" hidden>
+          <input type="file" id="pl-image-input" accept="image/*" />
+          <img id="pl-image-preview" class="pl-add-preview" hidden alt="" />
+        </div>
+        <div class="pl-add-panel" data-add-panel="screenshot" hidden>
+          <div id="pl-screenshot-zone" class="pl-screenshot-zone" tabindex="0">Ctrl+V로 스크린샷을 붙여넣으세요</div>
+          <img id="pl-screenshot-preview" class="pl-add-preview" hidden alt="" />
+        </div>
+        <div class="pl-add-panel" data-add-panel="manual" hidden>
+          <p class="pl-muted">제목과 메타데이터만으로 문제 카드를 만듭니다.</p>
+        </div>
+        <fieldset class="pl-meta-form">
+          <legend>문제 정보</legend>
+          <label>제목 <input type="text" id="pl-meta-title" class="pl-input" placeholder="2025 회계감사 기출" /></label>
+          <label>출처
+            <select id="pl-meta-source" class="pl-select">
+              <option value="past_exam">기출</option>
+              <option value="mock_exam">모의고사</option>
+              <option value="book">연습서</option>
+              <option value="custom">직접추가</option>
+            </select>
+          </label>
+          <label>연도 <input type="number" id="pl-meta-year" class="pl-input" placeholder="2025" /></label>
+          <label>문제번호 <input type="text" id="pl-meta-number" class="pl-input" placeholder="2" /></label>
+          <label>물음번호 <input type="text" id="pl-meta-question" class="pl-input" placeholder="1-3" /></label>
+          <label>설명 <textarea id="pl-meta-desc" class="pl-input" rows="2"></textarea></label>
+          <label>태그 (쉼표 구분) <input type="text" id="pl-meta-tags" class="pl-input" placeholder="독립성, 직무제한" /></label>
+          <label>메모 <textarea id="pl-meta-notes" class="pl-input" rows="2"></textarea></label>
+        </fieldset>
+      </div>
+      <footer class="ws-modal-footer">
+        <button type="button" class="ws-btn" data-add-close>취소</button>
+        <button type="button" class="ws-btn ws-btn-primary" data-add-submit>등록</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="pl-save-current-modal" class="ws-modal pl-add-modal" hidden>
+    <div class="ws-modal-dialog" role="dialog" aria-modal="true">
+      <header class="ws-modal-header">
+        <h2>Library에 저장</h2>
+        <button type="button" class="ws-btn ws-modal-close" data-save-lib-close>✕</button>
+      </header>
+      <div class="ws-modal-body">
+        <p id="pl-save-lib-pdf" class="pl-muted"></p>
+        <fieldset class="pl-meta-form">
+          <label>출처
+            <select id="pl-save-source" class="pl-select">
+              <option value="past_exam">기출</option>
+              <option value="mock_exam">모의</option>
+              <option value="book">연습서</option>
+              <option value="custom">직접추가</option>
+            </select>
+          </label>
+          <label>연도 <input type="number" id="pl-save-year" class="pl-input" placeholder="2025" /></label>
+          <label>문제번호 <input type="text" id="pl-save-number" class="pl-input" placeholder="2" /></label>
+          <label>물음번호 <input type="text" id="pl-save-question" class="pl-input" placeholder="1-3" /></label>
+          <label>메모 <textarea id="pl-save-notes" class="pl-input" rows="3"></textarea></label>
+          <label>태그 (쉼표 구분) <input type="text" id="pl-save-tags" class="pl-input" placeholder="독립성, 감사증거" /></label>
+        </fieldset>
+      </div>
+      <footer class="ws-modal-footer">
+        <button type="button" class="ws-btn" data-save-lib-close>취소</button>
+        <button type="button" class="ws-btn ws-btn-primary" data-save-lib-submit>저장</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="ws-preview-modal" class="ws-modal" hidden>
+    <div class="ws-modal-dialog" role="dialog" aria-modal="true">
+      <header class="ws-modal-header">
+        <h2>답안지 미리보기</h2>
+        <button type="button" class="ws-btn ws-modal-close" data-modal-close>✕</button>
+      </header>
+      <div class="ws-modal-toolbar">
+        <button type="button" id="ws-modal-prev" class="ws-btn" disabled>◀</button>
+        <span id="ws-modal-page-label">1 / 10</span>
+        <button type="button" id="ws-modal-next" class="ws-btn">▶</button>
+        <div class="ws-toolbar-divider"></div>
+        <button type="button" id="ws-export-pdf" class="ws-btn">PDF 저장</button>
+        <button type="button" id="ws-export-print" class="ws-btn">인쇄</button>
+        <button type="button" id="ws-export-html" class="ws-btn">HTML 저장</button>
+      </div>
+      <div class="ws-modal-body">
+        <div id="ws-modal-sheet-container" class="ws-modal-sheet-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="ws-exam-end-modal" class="ws-modal ws-modal-sm" hidden>
+    <div class="ws-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="ws-exam-end-title">
+      <header class="ws-modal-header">
+        <h2 id="ws-exam-end-title">시험을 종료하시겠습니까?</h2>
+      </header>
+      <div class="ws-modal-body">
+        <ul id="ws-exam-end-stats" class="ws-exam-end-stats"></ul>
+      </div>
+      <footer class="ws-modal-footer ws-exam-end-actions">
+        <button type="button" id="ws-exam-end-continue" class="ws-btn">계속 작성</button>
+        <button type="button" id="ws-exam-end-confirm" class="ws-btn ws-btn-primary">시험 종료</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="ws-exam-result-modal" class="ws-modal" hidden>
+    <div class="ws-modal-dialog ws-modal-lg" role="dialog" aria-modal="true">
+      <header class="ws-modal-header">
+        <h2>시험 종료 결과</h2>
+        <button type="button" class="ws-btn ws-modal-close" id="ws-exam-result-close">✕</button>
+      </header>
+      <div class="ws-modal-body">
+        <div id="ws-exam-result-summary" class="ws-exam-result-summary"></div>
+        <nav class="ws-result-tabs">
+          <button type="button" class="ws-result-tab is-active" data-result-tab="preview">답안 미리보기</button>
+          <button type="button" class="ws-result-tab" data-result-tab="pdf">PDF 저장</button>
+          <button type="button" class="ws-result-tab" data-result-tab="retry">다시 풀기</button>
+        </nav>
+        <div class="ws-result-panels">
+          <section class="ws-result-panel is-active" data-result-panel="preview">
+            <div class="ws-result-preview-nav">
+              <button type="button" class="ws-btn" data-preview-prev>◀</button>
+              <span data-preview-label>1 / 10</span>
+              <button type="button" class="ws-btn" data-preview-next>▶</button>
+            </div>
+            <div id="ws-exam-result-preview" class="ws-exam-result-preview"></div>
+          </section>
+          <section class="ws-result-panel" data-result-panel="pdf">
+            <div id="ws-exam-result-pdf-status" class="ws-exam-result-pdf-status"></div>
+            <button type="button" id="ws-exam-result-export-pdf" class="ws-btn ws-btn-primary">PDF 저장</button>
+          </section>
+          <section class="ws-result-panel" data-result-panel="retry">
+            <p>답안을 초기화하고 같은 시험지로 다시 풀 수 있습니다.</p>
+            <button type="button" id="ws-exam-result-retry" class="ws-btn ws-btn-primary">다시 풀기</button>
+          </section>
+        </div>
+      </div>
+      <footer class="ws-modal-footer">
+        <button type="button" id="ws-exam-result-finish" class="ws-btn ws-btn-primary">종료</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="ws-attempt-existing-modal" class="ws-modal ws-modal-sm" hidden>
+    <div class="ws-modal-dialog" role="dialog" aria-modal="true">
+      <header class="ws-modal-header"><h2>이 문제의 기존 풀이 기록이 있습니다.</h2></header>
+      <div class="ws-modal-body" id="ws-attempt-existing-summary"></div>
+      <footer class="ws-modal-footer ws-modal-footer-col">
+        <button type="button" class="ws-btn ws-btn-primary" data-action="load-latest">최근 풀이 불러오기</button>
+        <button type="button" class="ws-btn" data-action="open-list">풀이 기록 선택</button>
+        <button type="button" class="ws-btn" data-action="start-new">새로 풀기</button>
+        <button type="button" class="ws-btn" data-action="cancel-existing">취소</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="ws-attempt-list-modal" class="ws-modal" hidden>
+    <div class="ws-modal-dialog" role="dialog" aria-modal="true">
+      <header class="ws-modal-header"><h2>풀이 기록 선택</h2></header>
+      <div class="ws-modal-body ws-attempt-list-body" id="ws-attempt-list-body"></div>
+      <footer class="ws-modal-footer"><button type="button" class="ws-btn" data-action="close-list">닫기</button></footer>
+    </div>
+  </div>
+
+  <div id="ws-attempt-new-modal" class="ws-modal ws-modal-sm" hidden>
+    <div class="ws-modal-dialog" role="dialog" aria-modal="true">
+      <header class="ws-modal-header"><h2>새로 풀기</h2></header>
+      <div class="ws-modal-body">
+        <p class="ws-panel-desc">기존 답안은 불러오지 않고 빈 답안지로 시작합니다.</p>
+        <label class="ws-check-row"><input type="checkbox" id="ws-new-copy-memo" /> 기존 메모 복사</label>
+        <label class="ws-check-row"><input type="checkbox" id="ws-new-copy-tags" checked /> 기존 태그 복사</label>
+        <label class="ws-check-row"><input type="checkbox" id="ws-new-copy-annotations" /> 기존 주석 복사</label>
+      </div>
+      <footer class="ws-modal-footer">
+        <button type="button" class="ws-btn" data-action="cancel-new">취소</button>
+        <button type="button" class="ws-btn ws-btn-primary" data-action="confirm-new">시작</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="ws-attempt-save-modal" class="ws-modal ws-modal-sm" hidden>
+    <div class="ws-modal-dialog" role="dialog" aria-modal="true">
+      <header class="ws-modal-header"><h2>풀이 기록 저장</h2></header>
+      <div class="ws-modal-body"><p>저장 방식을 선택해주세요.</p></div>
+      <footer class="ws-modal-footer ws-modal-footer-col">
+        <button type="button" class="ws-btn" data-save-choice="update">기존 기록 업데이트</button>
+        <button type="button" class="ws-btn ws-btn-primary" data-save-choice="new">새 풀이로 저장</button>
+        <button type="button" class="ws-btn" data-save-choice="cancel">취소</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="ws-attempt-unsaved-modal" class="ws-modal ws-modal-sm" hidden>
+    <div class="ws-modal-dialog" role="dialog" aria-modal="true">
+      <header class="ws-modal-header"><h2>변경사항이 저장되지 않았습니다.</h2></header>
+      <footer class="ws-modal-footer ws-modal-footer-col">
+        <button type="button" class="ws-btn" data-unsaved-choice="update">기존 기록 업데이트</button>
+        <button type="button" class="ws-btn ws-btn-primary" data-unsaved-choice="new">새 풀이로 저장</button>
+        <button type="button" class="ws-btn" data-unsaved-choice="discard">변경사항 버리기</button>
+        <button type="button" class="ws-btn" data-unsaved-choice="continue">계속 작성</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="ws-attempt-delete-modal" class="ws-modal ws-modal-sm" hidden>
+    <div class="ws-modal-dialog" role="dialog" aria-modal="true">
+      <header class="ws-modal-header"><h2>풀이 기록 삭제</h2></header>
+      <div class="ws-modal-body"><p>이 풀이 기록을 삭제하시겠습니까?</p></div>
+      <footer class="ws-modal-footer">
+        <button type="button" class="ws-btn" data-action="cancel-delete">취소</button>
+        <button type="button" class="ws-btn ws-btn-danger" data-action="confirm-delete">삭제</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="ws-attempt-preview-modal" class="ws-modal" hidden>
+    <div class="ws-modal-dialog ws-modal-lg" role="dialog" aria-modal="true">
+      <header class="ws-modal-header">
+        <h2>풀이 미리보기</h2>
+        <button type="button" class="ws-btn ws-modal-close" id="ws-attempt-preview-close">✕</button>
+      </header>
+      <div class="ws-modal-body"><div id="ws-attempt-preview-body" class="ws-exam-result-preview"></div></div>
+    </div>
+  </div>
+
+  <div id="ws-number-popup" class="ws-number-popup" hidden></div>
+
+  <div id="ws-toast" class="ws-toast" hidden role="status"></div>
+  <script type="module" src="workspace-main.js"></script>
+</body>
+</html>

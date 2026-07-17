@@ -1,0 +1,22 @@
+{
+  "name": "audit-ai-assistant",
+  "version": "1.0.0",
+  "description": "Audit AI Assistant - 회계감사 사례 분석 도구",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "html2pdf.js": "^0.14.0",
+    "multer": "^1.4.5-lts.1",
+    "openai": "^4.104.0",
+    "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^6.1.200",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "puppeteer": "^25.3.0"
+  }
+}

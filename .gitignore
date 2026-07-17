@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+!.env.example
+backup/.env
+.DS_Store
+Thumbs.db
+*.pdf
+*.log
+.cursor/
