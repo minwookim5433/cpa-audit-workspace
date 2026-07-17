@@ -223,6 +223,70 @@ export function copyAnswerSheetLayoutFromSource(target, source) {
   });
 }
 
+export function copyAnswerSheetComputedStyles(sourceSheet, targetSheet) {
+  if (!sourceSheet || !targetSheet) return;
+
+  const pairs = [[sourceSheet, targetSheet]];
+  const sourceHeader = sourceSheet.querySelector(".answer-doc-header");
+  const targetHeader = targetSheet.querySelector(".answer-doc-header");
+  if (sourceHeader && targetHeader) pairs.push([sourceHeader, targetHeader]);
+
+  const sourceBody = sourceSheet.querySelector(".answer-doc-body, .answer-sheet-content");
+  const targetBody = targetSheet.querySelector(".answer-doc-body, .answer-sheet-content");
+  if (sourceBody && targetBody) pairs.push([sourceBody, targetBody]);
+
+  const sourceEditor = sourceSheet.querySelector(".answer-doc-editor");
+  const targetEditor = targetSheet.querySelector(".answer-doc-editor");
+  if (sourceEditor && targetEditor) pairs.push([sourceEditor, targetEditor]);
+
+  const sourceBg = sourceSheet.querySelector(".answer-doc-bg, .answer-line-background");
+  const targetBg = targetSheet.querySelector(".answer-doc-bg, .answer-line-background");
+  if (sourceBg && targetBg) pairs.push([sourceBg, targetBg]);
+
+  const sourceLines = [...sourceSheet.querySelectorAll(".answer-doc-bg-line")];
+  const targetLines = [...targetSheet.querySelectorAll(".answer-doc-bg-line")];
+  sourceLines.forEach((line, index) => {
+    if (targetLines[index]) pairs.push([line, targetLines[index]]);
+  });
+
+  pairs.forEach(([source, target]) => copyExportStylesFromElement(source, target));
+
+  const rect = sourceSheet.getBoundingClientRect();
+  Object.assign(targetSheet.style, {
+    width: `${Math.round(rect.width)}px`,
+    maxWidth: `${Math.round(rect.width)}px`,
+    height: `${Math.round(rect.height)}px`,
+    minHeight: `${Math.round(rect.height)}px`,
+    transform: "none",
+    zoom: "1",
+    margin: "0",
+    boxSizing: "border-box",
+  });
+}
+
+export function measureAnswerPageLayout(el, label = "page") {
+  if (!el) return { label, missing: true };
+  const css = getComputedStyle(el);
+  const rect = el.getBoundingClientRect();
+  const lines = [...el.querySelectorAll(".answer-doc-bg-line")];
+  return {
+    label,
+    offsetWidth: el.offsetWidth,
+    offsetHeight: el.offsetHeight,
+    clientWidth: el.clientWidth,
+    clientHeight: el.clientHeight,
+    rectWidth: Math.round(rect.width * 100) / 100,
+    rectHeight: Math.round(rect.height * 100) / 100,
+    fontSize: css.fontSize,
+    letterSpacing: css.letterSpacing,
+    lineHeight: css.lineHeight,
+    transform: css.transform,
+    zoom: css.zoom || "1",
+    rows25Height: lines.reduce((sum, line) => sum + line.getBoundingClientRect().height, 0),
+    firstRowHeight: lines[0]?.getBoundingClientRect().height ?? null,
+  };
+}
+
 export function normalizeLetterSpacingCss(value) {
   const v = String(value || "").trim();
   if (!v || v === "normal") return "0px";

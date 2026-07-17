@@ -12,6 +12,8 @@ import {
   applyAnswerEditorExportStyles,
   applyAnswerSheetExportLayout,
   applyAnswerBodyExportLayout,
+  copyAnswerSheetComputedStyles,
+  measureAnswerPageLayout,
   ANSWER_PAGE_WIDTH_PX,
   ANSWER_LINE_HEIGHT_PX,
   ANSWER_FONT_FAMILY,
@@ -19,7 +21,8 @@ import {
 import { selectPagesForPdfExport } from "./workspace-answer-export-pages.js";
 import {
   ensurePdfCaptureLibs,
-  buildPdfFromPageNodes,
+  buildPdfFromSheetNodes,
+  PDF_CAPTURE_SCALE,
   EXPORT_PAGE_WIDTH_PX,
   EXPORT_PAGE_HEIGHT_PX,
 } from "./workspace-answer-pdf-capture.js";
@@ -193,6 +196,91 @@ function finalizeExportDocumentStyles(idoc, typography, referenceEditor = null) 
   });
 }
 
+async function prepareOffscreenCaptureSheets(
+  clones,
+  typography,
+  referenceSheet,
+  referenceEditor,
+  { log = false } = {}
+) {
+  const mount = document.createElement("div");
+  mount.className = "answer-doc-capture-mount";
+  mount.style.cssText =
+    "position:fixed;left:-10000px;top:0;z-index:-1;visibility:hidden;pointer-events:none;background:#fff;transform:none;zoom:1;";
+  document.body.appendChild(mount);
+
+  const t = normalizeAnswerTypography(typography);
+  const sheets = [];
+
+  clones.forEach((clone) => {
+    const sheet = clone.cloneNode(true);
+    Object.assign(sheet.style, {
+      transform: "none",
+      zoom: "1",
+      transformOrigin: "initial",
+      margin: "0",
+    });
+    mount.appendChild(sheet);
+
+    if (referenceSheet) {
+      copyAnswerSheetComputedStyles(referenceSheet, sheet);
+    } else {
+      applyAnswerSheetExportLayout(sheet, t);
+      applyAnswerBodyExportLayout(
+        sheet.querySelector(".answer-doc-body, .answer-sheet-content")
+      );
+      applyAnswerEditorExportStyles(
+        sheet.querySelector(".answer-doc-editor"),
+        t,
+        referenceEditor
+      );
+    }
+
+    if (log) {
+      sheet.style.outline = "2px solid red";
+    }
+
+    sheets.push(sheet);
+  });
+
+  await waitForExportLayout(document);
+
+  if (log) {
+    const liveSheet = referenceSheet || document.querySelector(".answer-doc-sheet");
+    console.group("[answer-export] layout compare");
+    if (liveSheet) {
+      console.table([
+        measureAnswerPageLayout(liveSheet, "live-sheet"),
+        measureAnswerPageLayout(
+          liveSheet.querySelector(".answer-doc-editor"),
+          "live-editor"
+        ),
+      ]);
+    }
+    console.table(
+      sheets.map((sheet, index) => ({
+        ...measureAnswerPageLayout(sheet, `capture-sheet-${index + 1}`),
+        editorRows25: measureAnswerPageLayout(
+          sheet.querySelector(".answer-doc-editor"),
+          `capture-editor-${index + 1}`
+        ).rows25Height,
+      }))
+    );
+    console.log("devicePixelRatio:", window.devicePixelRatio);
+    console.log("html2canvas scale:", PDF_CAPTURE_SCALE);
+    console.groupEnd();
+  }
+
+  if (referenceEditor) {
+    const outputEditor = sheets[0]?.querySelector(".answer-doc-editor");
+    if (outputEditor) {
+      assertAnswerTypographyMatch(referenceEditor, outputEditor);
+    }
+  }
+
+  return { mount, sheets };
+}
+
 async function prepareExportDocument(html, typography, referenceEditor) {
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
@@ -273,20 +361,27 @@ export async function downloadPdfFromClones(
   }
 
   const t = normalizeAnswerTypography(typography);
-  const html = buildExportHtmlFromClones(audit.pagesToExport, filename, t);
+  const referenceSheet =
+    referenceEditor?.closest?.(".answer-doc-sheet") ||
+    document.querySelector(".answer-doc-sheet");
 
-  const { iframe, idoc } = await prepareExportDocument(html, t, referenceEditor);
+  const { mount, sheets } = await prepareOffscreenCaptureSheets(
+    audit.pagesToExport,
+    t,
+    referenceSheet,
+    referenceEditor,
+    { log: logPages }
+  );
 
-  const pageNodes = [...idoc.querySelectorAll(".export-answer-page")];
-  if (!pageNodes.length) {
-    document.body.removeChild(iframe);
+  if (!sheets.length) {
+    mount.remove();
     throw new Error("보낼 답안지 페이지가 없습니다.");
   }
 
   try {
-    const pdf = await buildPdfFromPageNodes(pageNodes, { log: logPages });
+    const pdf = await buildPdfFromSheetNodes(sheets, { log: logPages });
     pdf.save(filename || "cpa-answers.pdf");
   } finally {
-    document.body.removeChild(iframe);
+    mount.remove();
   }
 }
