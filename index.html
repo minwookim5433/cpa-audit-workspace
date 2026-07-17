@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CPA 답안 연습장</title>
+  <title>CPA Audit Workspace</title>
   <link rel="stylesheet" href="/node_modules/pdfjs-dist/web/pdf_viewer.css">
   <link rel="stylesheet" href="workspace.css">
 </head>
@@ -86,7 +86,10 @@
     <div id="solve-view" class="app-view is-active">
   <div class="ws-app" id="ws-app">
     <header class="ws-toolbar">
-      <span class="ws-brand">CPA 답안 연습장</span>
+      <div class="ws-brand-block">
+        <h1 class="ws-brand">CPA Audit Workspace</h1>
+        <p class="ws-brand-sub">회계감사 기출문제를 실제 답안지 형식으로 타이핑하고 저장하는 연습 도구</p>
+      </div>
       <div class="ws-toolbar-divider"></div>
       <input type="file" id="ws-pdf-input" accept="application/pdf,.pdf" hidden />
       <div class="ws-doc-select-wrap">
@@ -99,6 +102,14 @@
       <span id="ws-save-status" class="ws-save-status">저장됨</span>
       <span id="ws-status" class="ws-status" aria-live="polite"></span>
     </header>
+
+    <div id="ws-usage-guide" class="ws-usage-guide" aria-label="사용 안내">
+      <ol class="ws-usage-guide-list">
+        <li>시험지 PDF 선택</li>
+        <li>오른쪽 답안지 작성</li>
+        <li>시험 종료 후 PDF 저장</li>
+      </ol>
+    </div>
 
     <div id="ws-doc-manage-modal" class="ws-modal ws-modal-sm" hidden>
       <div class="ws-modal-dialog">
@@ -218,7 +229,6 @@
 
         <div class="ws-split-pane" id="ws-split-pane">
           <section class="ws-pane ws-pane-exam is-active" id="ws-pane-exam">
-            <p id="ws-exam-hint" class="ws-exam-hint">시험지 PDF를 선택하세요.</p>
             <div class="ws-exam-nav">
               <div class="ws-exam-nav-row">
                 <button type="button" id="ws-prev-page" class="ws-btn ws-btn-fixed" disabled title="이전">◀</button>

@@ -139,7 +139,7 @@ function cacheElements() {
     docManageModal: "ws-doc-manage-modal",
     pdfList: "ws-pdf-list",
     status: "ws-status",
-    examHint: "ws-exam-hint",
+    usageGuide: "ws-usage-guide",
     examPages: "ws-exam-pages",
     exam: "ws-exam",
     answerEditor: "ws-answer-editor",
@@ -350,8 +350,9 @@ function syncToSlot() {
 }
 
 function updateExamHint() {
-  if (els.examHint) els.examHint.hidden = Boolean(state.pdfDoc);
-  if (els.examPages) els.examPages.hidden = !state.pdfDoc;
+  const hasPdf = Boolean(state.pdfDoc);
+  if (els.usageGuide) els.usageGuide.hidden = hasPdf;
+  if (els.examPages) els.examPages.hidden = !hasPdf;
 }
 
 async function loadPdfDocument(renderBuffer) {
