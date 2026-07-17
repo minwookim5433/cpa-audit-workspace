@@ -223,6 +223,118 @@ export function copyAnswerSheetLayoutFromSource(target, source) {
   });
 }
 
+export function copyAnswerSheetComputedStyles(sourceSheet, targetSheet) {
+  if (!sourceSheet || !targetSheet) return;
+
+  const pairs = [[sourceSheet, targetSheet]];
+  const sourceHeader = sourceSheet.querySelector(".answer-doc-header");
+  const targetHeader = targetSheet.querySelector(".answer-doc-header");
+  if (sourceHeader && targetHeader) pairs.push([sourceHeader, targetHeader]);
+
+  const sourceBody = sourceSheet.querySelector(".answer-doc-body, .answer-sheet-content");
+  const targetBody = targetSheet.querySelector(".answer-doc-body, .answer-sheet-content");
+  if (sourceBody && targetBody) pairs.push([sourceBody, targetBody]);
+
+  const sourceEditor = sourceSheet.querySelector(".answer-doc-editor");
+  const targetEditor = targetSheet.querySelector(".answer-doc-editor");
+  if (sourceEditor && targetEditor) pairs.push([sourceEditor, targetEditor]);
+
+  const sourceBg = sourceSheet.querySelector(".answer-doc-bg, .answer-line-background");
+  const targetBg = targetSheet.querySelector(".answer-doc-bg, .answer-line-background");
+  if (sourceBg && targetBg) pairs.push([sourceBg, targetBg]);
+
+  const sourceLines = [...sourceSheet.querySelectorAll(".answer-doc-bg-line")];
+  const targetLines = [...targetSheet.querySelectorAll(".answer-doc-bg-line")];
+  sourceLines.forEach((line, index) => {
+    if (targetLines[index]) pairs.push([line, targetLines[index]]);
+  });
+
+  pairs.forEach(([source, target]) => copyExportStylesFromElement(source, target));
+
+  const rect = sourceSheet.getBoundingClientRect();
+  Object.assign(targetSheet.style, {
+    width: `${Math.round(rect.width)}px`,
+    maxWidth: `${Math.round(rect.width)}px`,
+    height: `${Math.round(rect.height)}px`,
+    minHeight: `${Math.round(rect.height)}px`,
+    transform: "none",
+    zoom: "1",
+    margin: "0",
+    boxSizing: "border-box",
+  });
+}
+
+export function measureAnswerPageLayout(el, label = "page") {
+  if (!el) return { label, missing: true };
+  const css = getComputedStyle(el);
+  const rect = el.getBoundingClientRect();
+  const lines = [...el.querySelectorAll(".answer-doc-bg-line")];
+  const padL = parseFloat(css.paddingLeft) || 0;
+  const padR = parseFloat(css.paddingRight) || 0;
+  return {
+    label,
+    offsetWidth: el.offsetWidth,
+    offsetHeight: el.offsetHeight,
+    clientWidth: el.clientWidth,
+    clientHeight: el.clientHeight,
+    contentWidth: Math.max(0, el.clientWidth - padL - padR),
+    rectWidth: Math.round(rect.width * 100) / 100,
+    rectHeight: Math.round(rect.height * 100) / 100,
+    rectTop: Math.round(rect.top * 100) / 100,
+    rectBottom: Math.round(rect.bottom * 100) / 100,
+    fontSize: css.fontSize,
+    letterSpacing: css.letterSpacing,
+    lineHeight: css.lineHeight,
+    whiteSpace: css.whiteSpace,
+    overflowWrap: css.overflowWrap,
+    wordBreak: css.wordBreak,
+    boxSizing: css.boxSizing,
+    paddingLeft: css.paddingLeft,
+    paddingRight: css.paddingRight,
+    transform: css.transform,
+    zoom: css.zoom || "1",
+    rows25Height: lines.reduce((sum, line) => sum + line.getBoundingClientRect().height, 0),
+    firstRowHeight: lines[0]?.getBoundingClientRect().height ?? null,
+  };
+}
+
+export function measureAnswerContentVerticalLayout(sheetEl) {
+  if (!sheetEl) return null;
+  const sheetRect = sheetEl.getBoundingClientRect();
+  const editor = sheetEl.querySelector(".answer-doc-editor");
+  const body = sheetEl.querySelector(".answer-doc-body, .answer-sheet-content");
+  const bodyRect = body?.getBoundingClientRect();
+  const editorRect = editor?.getBoundingClientRect();
+
+  let lastContentBottom = editorRect?.top ?? bodyRect?.top ?? sheetRect.top;
+  if (editor) {
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    const rects = [...range.getClientRects()];
+    if (rects.length) {
+      lastContentBottom = Math.max(...rects.map((r) => r.bottom));
+    } else if (editorRect) {
+      lastContentBottom = editorRect.bottom;
+    }
+  }
+
+  const pageBottom = bodyRect?.bottom ?? sheetRect.bottom;
+  const snapshot = editor ? getAnswerEditorStyleSnapshot(editor) : null;
+
+  return {
+    sheetTop: Math.round(sheetRect.top * 100) / 100,
+    sheetBottom: Math.round(sheetRect.bottom * 100) / 100,
+    bodyTop: bodyRect ? Math.round(bodyRect.top * 100) / 100 : null,
+    bodyBottom: bodyRect ? Math.round(bodyRect.bottom * 100) / 100 : null,
+    editorTop: editorRect ? Math.round(editorRect.top * 100) / 100 : null,
+    lastContentBottom: Math.round(lastContentBottom * 100) / 100,
+    pageBottom: Math.round(pageBottom * 100) / 100,
+    remainingBelowContent: Math.round((pageBottom - lastContentBottom) * 100) / 100,
+    contentWidth: snapshot?.contentWidth ?? null,
+    lineHeightPx: snapshot?.lineHeight ?? null,
+  };
+}
+
 export function normalizeLetterSpacingCss(value) {
   const v = String(value || "").trim();
   if (!v || v === "normal") return "0px";

@@ -6,6 +6,7 @@ import {
   normalizeAnswerText,
   plainTextFromHtml,
   cleanEmptyAnswerMarkupInNode,
+  stripFormatSpansFromNode,
 } from "./workspace-answer-format.js";
 
 export function getAnswerEditorHtmlFromClone(clone) {
@@ -16,7 +17,7 @@ export function sanitizeCloneForExport(clone) {
   if (!clone) return clone;
   const editor = clone.querySelector?.(".answer-doc-editor");
   if (editor) {
-    cleanEmptyAnswerMarkupInNode(editor);
+    stripFormatSpansFromNode(editor);
   }
   return clone;
 }

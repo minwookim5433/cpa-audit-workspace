@@ -12,6 +12,9 @@ import {
   applyAnswerEditorExportStyles,
   applyAnswerSheetExportLayout,
   applyAnswerBodyExportLayout,
+  copyAnswerSheetComputedStyles,
+  measureAnswerPageLayout,
+  measureAnswerContentVerticalLayout,
   ANSWER_PAGE_WIDTH_PX,
   ANSWER_LINE_HEIGHT_PX,
   ANSWER_FONT_FAMILY,
@@ -193,6 +196,125 @@ function finalizeExportDocumentStyles(idoc, typography, referenceEditor = null) 
   });
 }
 
+function buildOffscreenExportPageInner() {
+  const inner = document.createElement("div");
+  inner.className = "export-answer-page-inner";
+  Object.assign(inner.style, {
+    width: "100%",
+    height: "100%",
+    boxSizing: "border-box",
+    overflow: "hidden",
+    paddingTop: "24px",
+    display: "flex",
+    justifyContent: "center",
+  });
+  return inner;
+}
+
+async function prepareOffscreenCapturePages(
+  clones,
+  typography,
+  referenceSheet,
+  referenceEditor,
+  { log = false } = {}
+) {
+  const mount = document.createElement("div");
+  mount.className = "answer-doc-capture-mount";
+  mount.style.cssText =
+    "position:fixed;left:-10000px;top:0;z-index:-1;pointer-events:none;background:#fff;transform:none;zoom:1;opacity:0.01;";
+  document.body.appendChild(mount);
+
+  const t = normalizeAnswerTypography(typography);
+  const pages = [];
+
+  clones.forEach((clone, index) => {
+    const page = document.createElement("section");
+    page.className = "export-answer-page";
+    page.dataset.page = String(index + 1);
+    applyAnswerSheetVars(page, t);
+    Object.assign(page.style, {
+      width: `${EXPORT_PAGE_WIDTH_PX}px`,
+      height: `${EXPORT_PAGE_HEIGHT_PX}px`,
+      boxSizing: "border-box",
+      overflow: "hidden",
+      margin: "0",
+      padding: "0",
+      background: "#ffffff",
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "center",
+    });
+
+    const inner = buildOffscreenExportPageInner();
+    const sheet = clone.cloneNode(true);
+    Object.assign(sheet.style, {
+      transform: "none",
+      zoom: "1",
+      transformOrigin: "initial",
+      margin: "0",
+    });
+    inner.appendChild(sheet);
+    page.appendChild(inner);
+    mount.appendChild(page);
+
+    if (referenceSheet) {
+      copyAnswerSheetComputedStyles(referenceSheet, sheet);
+    } else {
+      applyAnswerSheetExportLayout(sheet, t);
+      applyAnswerBodyExportLayout(
+        sheet.querySelector(".answer-doc-body, .answer-sheet-content")
+      );
+      applyAnswerEditorExportStyles(
+        sheet.querySelector(".answer-doc-editor"),
+        t,
+        referenceEditor
+      );
+    }
+
+    if (log) {
+      page.style.outline = "2px solid red";
+    }
+
+    pages.push(page);
+  });
+
+  await waitForExportLayout(document);
+
+  if (log) {
+    const liveSheet = referenceSheet || document.querySelector(".answer-doc-sheet");
+    const previewSheet = liveSheet?.cloneNode(true);
+    if (previewSheet && liveSheet) {
+      copyAnswerSheetComputedStyles(liveSheet, previewSheet);
+    }
+    console.group("[answer-export] layout compare");
+    if (liveSheet) {
+      console.table([
+        measureAnswerContentVerticalLayout(liveSheet),
+        previewSheet ? measureAnswerContentVerticalLayout(previewSheet) : null,
+      ].filter(Boolean));
+    }
+    console.table(
+      pages.map((page, index) => ({
+        ...measureAnswerContentVerticalLayout(page.querySelector(".answer-doc-sheet")),
+        editor: measureAnswerPageLayout(
+          page.querySelector(".answer-doc-editor"),
+          `export-editor-${index + 1}`
+        ),
+      }))
+    );
+    console.groupEnd();
+  }
+
+  if (referenceEditor) {
+    const outputEditor = pages[0]?.querySelector(".answer-doc-editor");
+    if (outputEditor) {
+      assertAnswerTypographyMatch(referenceEditor, outputEditor);
+    }
+  }
+
+  return { mount, pages };
+}
+
 async function prepareExportDocument(html, typography, referenceEditor) {
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
@@ -273,20 +395,27 @@ export async function downloadPdfFromClones(
   }
 
   const t = normalizeAnswerTypography(typography);
-  const html = buildExportHtmlFromClones(audit.pagesToExport, filename, t);
+  const referenceSheet =
+    referenceEditor?.closest?.(".answer-doc-sheet") ||
+    document.querySelector(".answer-doc-sheet");
 
-  const { iframe, idoc } = await prepareExportDocument(html, t, referenceEditor);
+  const { mount, pages } = await prepareOffscreenCapturePages(
+    audit.pagesToExport,
+    t,
+    referenceSheet,
+    referenceEditor,
+    { log: logPages }
+  );
 
-  const pageNodes = [...idoc.querySelectorAll(".export-answer-page")];
-  if (!pageNodes.length) {
-    document.body.removeChild(iframe);
+  if (!pages.length) {
+    mount.remove();
     throw new Error("보낼 답안지 페이지가 없습니다.");
   }
 
   try {
-    const pdf = await buildPdfFromPageNodes(pageNodes, { log: logPages });
+    const pdf = await buildPdfFromPageNodes(pages, { log: logPages });
     pdf.save(filename || "cpa-answers.pdf");
   } finally {
-    document.body.removeChild(iframe);
+    mount.remove();
   }
 }

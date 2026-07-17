@@ -99,25 +99,53 @@ async function probePdfExport(page) {
 
     await captureMod.ensurePdfCaptureLibs();
     const t = typoMod.normalizeAnswerTypography(state.answerTypography);
-    const html = exportMod.buildExportHtmlFromClones(audit.pagesToExport, state.docTitle, t);
+    const referenceSheet = document.querySelector(".answer-doc-sheet");
+    const referenceEditor = document.querySelector(".answer-doc-editor");
 
-    const iframe = document.createElement("iframe");
-    iframe.style.cssText =
-      "position:fixed;left:0;top:0;width:794px;height:1123px;border:none;opacity:0.01;pointer-events:none;z-index:-1;";
-    document.body.appendChild(iframe);
-    const idoc = iframe.contentDocument;
-    idoc.open();
-    idoc.write(html);
-    idoc.close();
-    typoMod.applyAnswerSheetVars(idoc.body, t);
-    idoc.querySelectorAll(
-      ".export-answer-page, .export-answer-page-inner, .answer-doc-sheet, .answer-sheet-page, .answer-doc-editor"
-    ).forEach((el) => {
-      typoMod.applyAnswerSheetVars(el, t);
+    const mount = document.createElement("div");
+    mount.style.cssText =
+      "position:fixed;left:-10000px;top:0;z-index:-1;pointer-events:none;background:#fff;opacity:0.01;";
+    document.body.appendChild(mount);
+
+    const pageNodes = audit.pagesToExport.map((clone, index) => {
+      const page = document.createElement("section");
+      page.className = "export-answer-page";
+      page.dataset.page = String(index + 1);
+      Object.assign(page.style, {
+        width: `${captureMod.EXPORT_PAGE_WIDTH_PX}px`,
+        height: `${captureMod.EXPORT_PAGE_HEIGHT_PX}px`,
+        boxSizing: "border-box",
+        overflow: "hidden",
+        margin: "0",
+        padding: "0",
+        background: "#fff",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+      });
+      const inner = document.createElement("div");
+      inner.className = "export-answer-page-inner";
+      Object.assign(inner.style, {
+        width: "100%",
+        height: "100%",
+        boxSizing: "border-box",
+        overflow: "hidden",
+        paddingTop: "24px",
+        display: "flex",
+        justifyContent: "center",
+      });
+      const sheet = clone.cloneNode(true);
+      inner.appendChild(sheet);
+      page.appendChild(inner);
+      mount.appendChild(page);
+      if (referenceSheet) {
+        typoMod.copyAnswerSheetComputedStyles(referenceSheet, sheet);
+      }
+      return page;
     });
-    await typoMod.waitForExportLayout(idoc);
 
-    const pageNodes = [...idoc.querySelectorAll(".export-answer-page")];
+    await typoMod.waitForExportLayout(document);
+
     const metrics = pageNodes.map((n, index) => {
       captureMod.normalizeExportPageNode(n);
       return {
@@ -129,10 +157,10 @@ async function probePdfExport(page) {
     });
 
     const firstCanvas = pageNodes.length
-      ? await captureMod.capturePageNodeToCanvas(pageNodes[0], idoc)
+      ? await captureMod.capturePageNodeToCanvas(pageNodes[0], document)
       : null;
 
-    const exportEditor = idoc.querySelector(".answer-doc-editor");
+    const exportEditor = pageNodes[0]?.querySelector(".answer-doc-editor");
     const exportStyle = exportEditor
       ? {
           fontSize: getComputedStyle(exportEditor).fontSize,
@@ -142,7 +170,7 @@ async function probePdfExport(page) {
 
     const pdf = await captureMod.buildPdfFromPageNodes(pageNodes, { log: true });
     const pdfPageCount = pdf.internal.getNumberOfPages();
-    document.body.removeChild(iframe);
+    mount.remove();
 
     return {
       audit,
