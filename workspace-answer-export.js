@@ -14,6 +14,9 @@ import {
   applyAnswerBodyExportLayout,
   copyAnswerSheetComputedStyles,
   measureAnswerPageLayout,
+  applyA4ExportCaptureLayout,
+  A4_EXPORT_PAGE_WIDTH_PX,
+  A4_EXPORT_PAGE_HEIGHT_PX,
   ANSWER_PAGE_WIDTH_PX,
   ANSWER_LINE_HEIGHT_PX,
   ANSWER_FONT_FAMILY,
@@ -21,7 +24,7 @@ import {
 import { selectPagesForPdfExport } from "./workspace-answer-export-pages.js";
 import {
   ensurePdfCaptureLibs,
-  buildPdfFromSheetNodes,
+  buildPdfFromExportPages,
   PDF_CAPTURE_SCALE,
   EXPORT_PAGE_WIDTH_PX,
   EXPORT_PAGE_HEIGHT_PX,
@@ -196,7 +199,7 @@ function finalizeExportDocumentStyles(idoc, typography, referenceEditor = null) 
   });
 }
 
-async function prepareOffscreenCaptureSheets(
+async function prepareOffscreenCapturePages(
   clones,
   typography,
   referenceSheet,
@@ -210,37 +213,22 @@ async function prepareOffscreenCaptureSheets(
   document.body.appendChild(mount);
 
   const t = normalizeAnswerTypography(typography);
-  const sheets = [];
+  const pages = [];
 
   clones.forEach((clone) => {
+    const page = document.createElement("div");
+    page.className = "export-answer-page";
     const sheet = clone.cloneNode(true);
-    Object.assign(sheet.style, {
-      transform: "none",
-      zoom: "1",
-      transformOrigin: "initial",
-      margin: "0",
-    });
-    mount.appendChild(sheet);
+    page.appendChild(sheet);
+    mount.appendChild(page);
 
-    if (referenceSheet) {
-      copyAnswerSheetComputedStyles(referenceSheet, sheet);
-    } else {
-      applyAnswerSheetExportLayout(sheet, t);
-      applyAnswerBodyExportLayout(
-        sheet.querySelector(".answer-doc-body, .answer-sheet-content")
-      );
-      applyAnswerEditorExportStyles(
-        sheet.querySelector(".answer-doc-editor"),
-        t,
-        referenceEditor
-      );
-    }
+    applyA4ExportCaptureLayout(page, sheet, t, referenceSheet, referenceEditor);
 
     if (log) {
-      sheet.style.outline = "2px solid red";
+      page.style.outline = "2px solid red";
     }
 
-    sheets.push(sheet);
+    pages.push(page);
   });
 
   await waitForExportLayout(document);
@@ -258,27 +246,32 @@ async function prepareOffscreenCaptureSheets(
       ]);
     }
     console.table(
-      sheets.map((sheet, index) => ({
-        ...measureAnswerPageLayout(sheet, `capture-sheet-${index + 1}`),
+      pages.map((page, index) => ({
+        ...measureAnswerPageLayout(page, `export-page-${index + 1}`),
+        sheet: measureAnswerPageLayout(
+          page.querySelector(".answer-doc-sheet"),
+          `export-sheet-${index + 1}`
+        ),
         editorRows25: measureAnswerPageLayout(
-          sheet.querySelector(".answer-doc-editor"),
-          `capture-editor-${index + 1}`
+          page.querySelector(".answer-doc-editor"),
+          `export-editor-${index + 1}`
         ).rows25Height,
       }))
     );
     console.log("devicePixelRatio:", window.devicePixelRatio);
     console.log("html2canvas scale:", PDF_CAPTURE_SCALE);
+    console.log("A4 export page size:", `${A4_EXPORT_PAGE_WIDTH_PX}x${A4_EXPORT_PAGE_HEIGHT_PX}`);
     console.groupEnd();
   }
 
   if (referenceEditor) {
-    const outputEditor = sheets[0]?.querySelector(".answer-doc-editor");
+    const outputEditor = pages[0]?.querySelector(".answer-doc-editor");
     if (outputEditor) {
       assertAnswerTypographyMatch(referenceEditor, outputEditor);
     }
   }
 
-  return { mount, sheets };
+  return { mount, pages };
 }
 
 async function prepareExportDocument(html, typography, referenceEditor) {
@@ -365,21 +358,21 @@ export async function downloadPdfFromClones(
     referenceEditor?.closest?.(".answer-doc-sheet") ||
     document.querySelector(".answer-doc-sheet");
 
-  const { mount, sheets } = await prepareOffscreenCaptureSheets(
+  const { mount, pages } = await prepareOffscreenCapturePages(
     audit.pagesToExport,
     t,
     referenceSheet,
     referenceEditor,
-    { log: logPages }
+    { log: true }
   );
 
-  if (!sheets.length) {
+  if (!pages.length) {
     mount.remove();
     throw new Error("보낼 답안지 페이지가 없습니다.");
   }
 
   try {
-    const pdf = await buildPdfFromSheetNodes(sheets, { log: logPages });
+    const pdf = await buildPdfFromExportPages(pages, { log: true });
     pdf.save(filename || "cpa-answers.pdf");
   } finally {
     mount.remove();

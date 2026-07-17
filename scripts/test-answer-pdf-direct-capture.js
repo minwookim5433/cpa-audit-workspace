@@ -107,15 +107,20 @@ async function probePdfExport(page) {
       "position:fixed;left:-10000px;top:0;visibility:hidden;pointer-events:none;background:#fff;transform:none;zoom:1;";
     document.body.appendChild(mount);
 
-    const sheets = audit.pagesToExport.map((clone) => {
+    const pages = audit.pagesToExport.map((clone) => {
+      const pageEl = document.createElement("div");
+      pageEl.className = "export-answer-page";
       const sheet = clone.cloneNode(true);
-      mount.appendChild(sheet);
-      if (liveSheet) typoMod.copyAnswerSheetComputedStyles(liveSheet, sheet);
-      return sheet;
+      pageEl.appendChild(sheet);
+      mount.appendChild(pageEl);
+      if (liveSheet) {
+        typoMod.applyA4ExportCaptureLayout(pageEl, sheet, t, liveSheet, liveEditor);
+      }
+      return pageEl;
     });
     await typoMod.waitForExportLayout(document);
 
-    const metrics = sheets.map((n, index) => ({
+    const metrics = pages.map((n, index) => ({
       index,
       rectHeight: n.getBoundingClientRect().height,
       scrollHeight: n.scrollHeight,
@@ -123,12 +128,12 @@ async function probePdfExport(page) {
       offsetWidth: n.offsetWidth,
     }));
 
-    const firstSheet = sheets[0];
-    const firstCanvas = firstSheet
-      ? await captureMod.captureSheetNodeToCanvas(firstSheet, document)
+    const firstPage = pages[0];
+    const firstCanvas = firstPage
+      ? await captureMod.captureExportPageToCanvas(firstPage, document)
       : null;
 
-    const exportEditor = firstSheet?.querySelector(".answer-doc-editor");
+    const exportEditor = firstPage?.querySelector(".answer-doc-editor");
     const exportStyle = exportEditor
       ? {
           fontSize: getComputedStyle(exportEditor).fontSize,
@@ -136,18 +141,19 @@ async function probePdfExport(page) {
         }
       : null;
 
-    const pdf = await captureMod.buildPdfFromSheetNodes(sheets, { log: false });
+    const pdf = await captureMod.buildPdfFromExportPages(pages, { log: false });
     const pdfPageCount = pdf.internal.getNumberOfPages();
     mount.remove();
 
     return {
       audit,
-      pageNodesCount: sheets.length,
+      pageNodesCount: pages.length,
       pdfPageCount,
       metrics,
       canvasWidth: firstCanvas?.width ?? 0,
       canvasHeight: firstCanvas?.height ?? 0,
-      expectedCanvasHeight: (firstSheet?.offsetHeight ?? 0) * 2,
+      expectedCanvasWidth: 794 * 2,
+      expectedCanvasHeight: 1123 * 2,
       exportStyle,
       typography: t,
     };
@@ -236,7 +242,7 @@ async function main() {
       results,
       "D: 16px / 0.5px → PDF 1페이지 (자동 분할 없음)",
       lastProbe.pdfPageCount === 1 && typoD,
-      `pdf=${lastProbe.pdfPageCount} canvasH=${lastProbe.canvasHeight} sheetH=${lastProbe.expectedCanvasHeight}`
+      `pdf=${lastProbe.pdfPageCount} canvas=${lastProbe.canvasWidth}x${lastProbe.canvasHeight} expected=${lastProbe.expectedCanvasWidth}x${lastProbe.expectedCanvasHeight}`
     );
 
     await page.evaluate(async () => {
@@ -266,8 +272,8 @@ async function main() {
     );
 
     console.log("\n=== Diagnostics ===");
-    console.log("canvas height (scale 2):", lastProbe?.canvasHeight);
-    console.log("sheet canvas height at scale 2:", lastProbe?.expectedCanvasHeight);
+    console.log("canvas:", `${lastProbe?.canvasWidth}x${lastProbe?.canvasHeight}`);
+    console.log("expected canvas at scale 2:", `${lastProbe?.expectedCanvasWidth}x${lastProbe?.expectedCanvasHeight}`);
     console.log("page metrics sample:", JSON.stringify(lastProbe?.metrics?.[0], null, 2));
 
     const failed = results.filter((r) => !r.ok).length;
