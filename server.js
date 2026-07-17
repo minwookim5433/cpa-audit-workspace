@@ -11,7 +11,15 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const MAX_PDF_SIZE = 10 * 1024 * 1024;
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
+
+function ensureOpenAiClient(res) {
+  if (openai) return true;
+  res.status(503).json({ error: "AI 기능이 비활성화되었습니다." });
+  return false;
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -617,9 +625,7 @@ app.post("/api/extract-pdf", upload.single("pdf"), async (req, res) => {
 
 app.post("/api/analyze", async (req, res) => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OPENAI_API_KEY가 설정되지 않았습니다." });
-    }
+    if (!ensureOpenAiClient(res)) return;
 
     const { caseText, problemNumber } = req.body;
     if (!caseText?.trim()) {
@@ -672,9 +678,7 @@ app.post("/api/analyze", async (req, res) => {
 
 app.post("/api/extract-image", imageUpload.single("image"), async (req, res) => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OPENAI_API_KEY가 설정되지 않았습니다." });
-    }
+    if (!ensureOpenAiClient(res)) return;
     if (!req.file) return res.status(400).json({ error: "이미지 파일이 필요합니다." });
 
     const visionModel = process.env.OPENAI_VISION_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -721,9 +725,7 @@ app.post("/api/extract-image", imageUpload.single("image"), async (req, res) => 
 
 app.post("/api/analyze-navigator", async (req, res) => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OPENAI_API_KEY가 설정되지 않았습니다." });
-    }
+    if (!ensureOpenAiClient(res)) return;
 
     const { caseText, problemNumber, year, inputSource, sliceProblem } = req.body;
     if (!caseText?.trim()) {
@@ -998,9 +1000,7 @@ function normalizeFinancialParse(data) {
 
 app.post("/api/parse-financial-region", async (req, res) => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OPENAI_API_KEY가 설정되지 않았습니다." });
-    }
+    if (!ensureOpenAiClient(res)) return;
     const { imageDataUrl } = req.body;
     if (!imageDataUrl?.startsWith("data:image/")) {
       return res.status(400).json({ error: "선택 영역 이미지가 필요합니다." });
@@ -1233,9 +1233,7 @@ function normalizePurposeResult(purpose, data) {
 
 app.post("/api/analyze-purpose", async (req, res) => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OPENAI_API_KEY가 설정되지 않았습니다." });
-    }
+    if (!ensureOpenAiClient(res)) return;
 
     const {
       purpose,
@@ -1331,9 +1329,7 @@ app.post("/api/analyze-purpose", async (req, res) => {
 
 app.post("/api/analyze-region", async (req, res) => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OPENAI_API_KEY가 설정되지 않았습니다." });
-    }
+    if (!ensureOpenAiClient(res)) return;
 
     const { imageDataUrl, pageNumber, questionNumber, year, problemNumber } = req.body;
     if (!imageDataUrl?.startsWith("data:image/")) {
@@ -1383,9 +1379,7 @@ app.post("/api/analyze-region", async (req, res) => {
 
 app.post("/api/analyze-selection", async (req, res) => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OPENAI_API_KEY가 설정되지 않았습니다." });
-    }
+    if (!ensureOpenAiClient(res)) return;
 
     const { selectedText, contextBefore, contextAfter, pageNumber, questionNumber } = req.body;
     if (!selectedText?.trim()) {
@@ -1428,9 +1422,7 @@ app.post("/api/analyze-selection", async (req, res) => {
 
 app.post("/api/analytical-report-draft", async (req, res) => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OPENAI_API_KEY가 설정되지 않았습니다." });
-    }
+    if (!ensureOpenAiClient(res)) return;
 
     const { facts } = req.body;
     if (!facts || typeof facts !== "object") {
@@ -1621,7 +1613,7 @@ type 허용값: replace, delete, split, clarify
 repeatedHabits는 실제 반복된 습관만 포함하세요.`;
 
 app.get("/api/answer-feedback/health", (_req, res) => {
-  res.json({ ok: true, hasOpenAiKey: Boolean(process.env.OPENAI_API_KEY) });
+  res.json({ ok: true, hasOpenAiKey: Boolean(openai) });
 });
 
 app.post("/api/answer-feedback", async (req, res) => {
@@ -1630,9 +1622,7 @@ app.post("/api/answer-feedback", async (req, res) => {
       return res.status(503).json({ error: "피드백 서비스를 일시적으로 사용할 수 없습니다." });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OPENAI_API_KEY가 설정되지 않았습니다." });
-    }
+    if (!ensureOpenAiClient(res)) return;
 
     const answerText = String(req.body?.answerText || "").trim();
     if (!answerText) {
@@ -1684,9 +1674,7 @@ function normalizeCoachFeedbacks(data) {
 
 app.post("/api/answer-coach", async (req, res) => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OPENAI_API_KEY가 설정되지 않았습니다." });
-    }
+    if (!ensureOpenAiClient(res)) return;
 
     const { mode, selectedText, fullAnswer, problemNumber, year, questionNumber } = req.body;
 
