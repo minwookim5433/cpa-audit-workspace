@@ -109,7 +109,8 @@ export function createPreviewController({
         alert(err.message);
         return;
       }
-      alert(`PDF 저장 실패: ${err.message}`);
+      console.error("[answer-preview] PDF export failed:", err);
+      alert(err.message || "PDF 저장에 실패했습니다.");
     }
   });
 

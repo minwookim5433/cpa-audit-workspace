@@ -75,22 +75,13 @@ export function normalizeExportPageNode(pageNode, { log = false } = {}) {
 }
 
 export function fitCanvasToA4Mm(canvas) {
-  let renderWidthMm = PDF_PAGE_WIDTH_MM;
-  let renderHeightMm = (canvas.height / canvas.width) * renderWidthMm;
-
-  if (renderHeightMm > PDF_PAGE_HEIGHT_MM) {
-    const scaleRatio = Math.min(
-      PDF_PAGE_WIDTH_MM / renderWidthMm,
-      PDF_PAGE_HEIGHT_MM / renderHeightMm
-    );
-    renderWidthMm *= scaleRatio;
-    renderHeightMm *= scaleRatio;
-  }
-
-  const x = (PDF_PAGE_WIDTH_MM - renderWidthMm) / 2;
-  const y = (PDF_PAGE_HEIGHT_MM - renderHeightMm) / 2;
-
-  return { renderWidthMm, renderHeightMm, x, y };
+  void canvas;
+  return {
+    renderWidthMm: PDF_PAGE_WIDTH_MM,
+    renderHeightMm: PDF_PAGE_HEIGHT_MM,
+    x: 0,
+    y: 0,
+  };
 }
 
 export async function capturePageNodeToCanvas(pageNode, doc = document) {

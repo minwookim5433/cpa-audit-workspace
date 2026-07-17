@@ -8,6 +8,13 @@ import {
   normalizeAnswerTypography,
   assertAnswerTypographyMatch,
   waitForExportLayout,
+  waitForExportStylesheets,
+  applyAnswerEditorExportStyles,
+  applyAnswerSheetExportLayout,
+  applyAnswerBodyExportLayout,
+  ANSWER_PAGE_WIDTH_PX,
+  ANSWER_LINE_HEIGHT_PX,
+  ANSWER_FONT_FAMILY,
 } from "./workspace-answer-typography.js";
 import { selectPagesForPdfExport } from "./workspace-answer-export-pages.js";
 import {
@@ -101,9 +108,31 @@ function buildCloneExportStyles() {
       display: flex;
       justify-content: center;
     }
-    .export-answer-page .answer-doc-sheet-clone,
-    .export-answer-page .answer-sheet-page {
-      margin: 0;
+    .export-answer-page .answer-doc-sheet,
+    .export-answer-page .answer-sheet-page,
+    .export-answer-page .answer-doc-sheet-clone {
+      width: ${ANSWER_PAGE_WIDTH_PX}px;
+      max-width: ${ANSWER_PAGE_WIDTH_PX}px;
+      margin: 0 auto;
+      background: #fff;
+      box-sizing: border-box;
+    }
+    .export-answer-page .answer-doc-body,
+    .export-answer-page .answer-sheet-content {
+      position: relative;
+      min-height: calc(${ANSWER_LINE_HEIGHT_PX}px * 25);
+      box-sizing: border-box;
+    }
+    .export-answer-page .answer-doc-editor {
+      position: relative;
+      z-index: 1;
+      min-height: calc(${ANSWER_LINE_HEIGHT_PX}px * 25);
+      font-family: ${ANSWER_FONT_FAMILY};
+      white-space: pre-wrap;
+      word-break: break-all;
+      overflow-wrap: anywhere;
+      box-sizing: border-box;
+      outline: none;
     }
     @media print {
       body { background: #fff; }
@@ -149,6 +178,21 @@ function applyTypographyToExportDocument(idoc, typography) {
     });
 }
 
+function finalizeExportDocumentStyles(idoc, typography, referenceEditor = null) {
+  applyTypographyToExportDocument(idoc, typography);
+  idoc
+    .querySelectorAll(".answer-doc-sheet, .answer-sheet-page, .answer-doc-sheet-clone")
+    .forEach((el) => {
+      applyAnswerSheetExportLayout(el, typography);
+    });
+  idoc.querySelectorAll(".answer-doc-body, .answer-sheet-content").forEach((el) => {
+    applyAnswerBodyExportLayout(el);
+  });
+  idoc.querySelectorAll(".answer-doc-editor").forEach((el) => {
+    applyAnswerEditorExportStyles(el, typography, referenceEditor);
+  });
+}
+
 async function prepareExportDocument(html, typography, referenceEditor) {
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
@@ -166,7 +210,8 @@ async function prepareExportDocument(html, typography, referenceEditor) {
   idoc.write(html);
   idoc.close();
 
-  applyTypographyToExportDocument(idoc, typography);
+  await waitForExportStylesheets(idoc);
+  finalizeExportDocumentStyles(idoc, typography, referenceEditor);
   await waitForExportLayout(idoc);
 
   const outputEditor = idoc.querySelector(".answer-doc-editor");

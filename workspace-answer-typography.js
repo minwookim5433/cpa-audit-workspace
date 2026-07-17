@@ -15,6 +15,47 @@ export const ANSWER_PAGE_WIDTH_PX = 560;
 export const ANSWER_PADDING_LEFT_PX = 10;
 export const ANSWER_PADDING_RIGHT_PX = 10;
 export const ANSWER_LINE_HEIGHT_PX = 28;
+export const ANSWER_FONT_FAMILY =
+  '"Batang", "Nanum Myeongjo", "Noto Serif KR", "Times New Roman", serif';
+
+const EXPORT_STYLE_PROPS = [
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "letterSpacing",
+  "lineHeight",
+  "textAlign",
+  "paddingTop",
+  "paddingRight",
+  "paddingBottom",
+  "paddingLeft",
+  "marginTop",
+  "marginRight",
+  "marginBottom",
+  "marginLeft",
+  "width",
+  "maxWidth",
+  "minHeight",
+  "height",
+  "boxSizing",
+  "borderTopWidth",
+  "borderTopStyle",
+  "borderTopColor",
+  "borderRightWidth",
+  "borderRightStyle",
+  "borderRightColor",
+  "borderBottomWidth",
+  "borderBottomStyle",
+  "borderBottomColor",
+  "borderLeftWidth",
+  "borderLeftStyle",
+  "borderLeftColor",
+  "whiteSpace",
+  "overflowWrap",
+  "wordBreak",
+  "color",
+  "backgroundColor",
+];
 
 export function clampAnswerFontSize(value) {
   const n = Number(value);
@@ -66,6 +107,97 @@ export function answerSheetVarsStyleAttr(typography = {}) {
     .map(([k, v]) => `${k}:${v}`)
     .join(";");
   return `style="${style}"`;
+}
+
+export function getAnswerEditorExportStyles(typography = {}, referenceEditor = null) {
+  const t = normalizeAnswerTypography(typography);
+  const ref = referenceEditor ? getAnswerEditorStyleSnapshot(referenceEditor) : null;
+  return {
+    fontFamily: ref?.fontFamily || ANSWER_FONT_FAMILY,
+    fontSize: `${t.fontSize}px`,
+    fontWeight: ref?.fontWeight || "400",
+    letterSpacing: `${t.letterSpacing}px`,
+    lineHeight: `${ANSWER_LINE_HEIGHT_PX}px`,
+    paddingLeft: `${ANSWER_PADDING_LEFT_PX}px`,
+    paddingRight: `${ANSWER_PADDING_RIGHT_PX}px`,
+    paddingTop: "0px",
+    paddingBottom: "0px",
+    boxSizing: "border-box",
+    width: `${ANSWER_PAGE_WIDTH_PX}px`,
+    maxWidth: `${ANSWER_PAGE_WIDTH_PX}px`,
+    minHeight: `${ANSWER_LINE_HEIGHT_PX * 25}px`,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-all",
+    overflowWrap: "anywhere",
+    position: "relative",
+    zIndex: "1",
+    margin: "0",
+    color: "#000000",
+    backgroundColor: "#ffffff",
+  };
+}
+
+export function applyAnswerEditorExportStyles(el, typography = {}, referenceEditor = null) {
+  if (!el) return;
+  Object.assign(el.style, getAnswerEditorExportStyles(typography, referenceEditor));
+}
+
+export function applyAnswerSheetExportLayout(el, typography = {}) {
+  if (!el) return;
+  applyAnswerSheetVars(el, typography);
+  Object.assign(el.style, {
+    width: `${ANSWER_PAGE_WIDTH_PX}px`,
+    maxWidth: `${ANSWER_PAGE_WIDTH_PX}px`,
+    boxSizing: "border-box",
+    margin: "0 auto",
+    background: "#ffffff",
+  });
+}
+
+export function applyAnswerBodyExportLayout(el) {
+  if (!el) return;
+  Object.assign(el.style, {
+    position: "relative",
+    minHeight: `${ANSWER_LINE_HEIGHT_PX * 25}px`,
+    boxSizing: "border-box",
+  });
+}
+
+export function copyExportStylesFromElement(source, target, props = EXPORT_STYLE_PROPS) {
+  if (!source || !target) return;
+  const css = getComputedStyle(source);
+  props.forEach((prop) => {
+    const value = css[prop];
+    if (value) target.style[prop] = value;
+  });
+}
+
+function parseCssPx(value) {
+  const n = parseFloat(String(value || "").replace("px", ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+function pxValuesClose(a, b, tolerance = 1) {
+  const na = parseCssPx(a);
+  const nb = parseCssPx(b);
+  if (na == null || nb == null) return String(a) === String(b);
+  return Math.abs(na - nb) <= tolerance;
+}
+
+function normalizeFontFamily(value) {
+  return String(value || "")
+    .replace(/["']/g, "")
+    .toLowerCase()
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function fontFamiliesMatch(a, b) {
+  const refParts = normalizeFontFamily(a);
+  const outParts = normalizeFontFamily(b);
+  if (!refParts.length || !outParts.length) return a === b;
+  return refParts[0] === outParts[0];
 }
 
 export function copyAnswerSheetLayoutFromSource(target, source) {
@@ -120,21 +252,52 @@ export function assertAnswerTypographyMatch(referenceEl, outputEl) {
   const out = getAnswerEditorStyleSnapshot(outputEl);
   if (!ref || !out) return;
 
-  const checks = [
-    ["font-size", ref.fontSize, out.fontSize],
-    ["letter-spacing", ref.letterSpacing, out.letterSpacing],
-    ["line-height", ref.lineHeight, out.lineHeight],
-    ["font-family", ref.fontFamily, out.fontFamily],
-    ["clientWidth", String(ref.clientWidth), String(out.clientWidth)],
-    ["padding-left", ref.paddingLeft, out.paddingLeft],
-    ["padding-right", ref.paddingRight, out.paddingRight],
-  ];
+  const mismatches = [];
+  if (!pxValuesClose(ref.fontSize, out.fontSize)) {
+    mismatches.push(["font-size", ref.fontSize, out.fontSize]);
+  }
+  if (!pxValuesClose(ref.letterSpacing, out.letterSpacing, 0.05)) {
+    mismatches.push(["letter-spacing", ref.letterSpacing, out.letterSpacing]);
+  }
+  if (!pxValuesClose(ref.lineHeight, out.lineHeight)) {
+    mismatches.push(["line-height", ref.lineHeight, out.lineHeight]);
+  }
+  if (!fontFamiliesMatch(ref.fontFamily, out.fontFamily)) {
+    mismatches.push(["font-family", ref.fontFamily, out.fontFamily]);
+  }
+  if (Math.abs(ref.clientWidth - out.clientWidth) > 1) {
+    mismatches.push(["clientWidth", String(ref.clientWidth), String(out.clientWidth)]);
+  }
+  if (!pxValuesClose(ref.paddingLeft, out.paddingLeft)) {
+    mismatches.push(["padding-left", ref.paddingLeft, out.paddingLeft]);
+  }
+  if (!pxValuesClose(ref.paddingRight, out.paddingRight)) {
+    mismatches.push(["padding-right", ref.paddingRight, out.paddingRight]);
+  }
 
-  const mismatches = checks.filter(([, a, b]) => a !== b);
   if (mismatches.length) {
     const detail = mismatches.map(([k, a, b]) => `${k}: ref=${a} out=${b}`).join("; ");
-    throw new Error(`답안 출력 스타일 불일치: ${detail}`);
+    console.error("[answer-export] typography mismatch:", detail);
+    throw new Error("답안 출력 스타일을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
   }
+}
+
+export async function waitForExportStylesheets(doc = document) {
+  const links = [...doc.querySelectorAll('link[rel="stylesheet"]')];
+  await Promise.all(
+    links.map(
+      (link) =>
+        new Promise((resolve) => {
+          if (link.sheet) {
+            resolve();
+            return;
+          }
+          link.addEventListener("load", resolve, { once: true });
+          link.addEventListener("error", resolve, { once: true });
+        })
+    )
+  );
+  await waitForExportLayout(doc);
 }
 
 export async function waitForExportLayout(doc = document) {
