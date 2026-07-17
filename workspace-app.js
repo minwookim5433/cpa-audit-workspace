@@ -40,7 +40,6 @@ import {
   MAX_EXAM_SCALE,
   BUTTON_ZOOM_STEP,
 } from "./workspace-exam-pan-zoom.js";
-import { createFloatingToolbar, updateFloatingToolUi } from "./workspace-floating-toolbar.js";
 import { createFloatingTimer, loadTimerPosition } from "./workspace-floating-timer.js";
 import { createPreviewController } from "./workspace-answer-preview.js";
 import { stripFormatSpansFromSheet, hasMeaningfulAnswerContent, normalizeAnswerText, plainTextFromHtml } from "./workspace-answer-format.js";
@@ -56,11 +55,11 @@ import { initAttemptBridge } from "./workspace-attempt-bridge.js";
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/node_modules/pdfjs-dist/build/pdf.worker.mjs";
 
 const STORAGE_KEY = "cpa-workspace-session";
-const DEFAULT_PANEL_RATIO = 0.5;
+const DEFAULT_PANEL_RATIO = 0.4;
 const VIEW_PRESETS = {
-  equal: 0.5,
-  exam: 0.65,
-  answer: 0.35,
+  equal: 0.4,
+  exam: 0.55,
+  answer: 0.32,
 };
 const MIN_EXAM_RATIO = 0.35;
 const MIN_ANSWER_RATIO = 0.35;
@@ -123,8 +122,6 @@ let answerDocController = null;
 let examResultController = null;
 let currentExamAttempt = null;
 let attemptBridge = null;
-let floatToolbar = null;
-let floatToolbarReady = false;
 let floatingTimer = null;
 
 const els = {};
@@ -152,7 +149,8 @@ function cacheElements() {
     ansPageLabel: "ws-ans-page-label",
     wrongNotesList: "ws-wrong-notes-list",
     statsDashboard: "ws-stats-dashboard",
-    timerDisplay: "ws-timer-display",
+    timerDisplay: "ws-float-timer-display",
+    headerExamTools: "ws-header-exam-tools",
     toast: "ws-toast",
     searchInput: "ws-search-input",
     searchResults: "ws-search-results",
@@ -168,7 +166,6 @@ function cacheElements() {
     answerPreviewBtn: "ws-answer-preview-btn",
     previewModal: "ws-preview-modal",
     mobileTabs: "ws-mobile-tabs",
-    floatToolbar: "ws-float-toolbar",
     viewModes: "ws-view-modes",
     floatingTimer: "ws-floating-timer",
   };
@@ -292,7 +289,7 @@ function syncTimerToWorkspace(ws) {
 function applyTimerFromWorkspace(ws) {
   state.timerDurationSeconds = ws?.timerDurationSeconds ?? DEFAULT_TIMER_DURATION;
   state.timerRemainingSeconds = ws?.timerRemainingSeconds ?? state.timerDurationSeconds;
-  state.timerSeconds = getTimerElapsedSeconds();
+  normalizeTimerState({ pause: true });
 }
 
 function syncFromSlot() {
@@ -382,6 +379,7 @@ function updateExamHint() {
   const hasPdf = Boolean(state.pdfDoc);
   if (els.usageGuide) els.usageGuide.hidden = hasPdf;
   if (els.examPages) els.examPages.hidden = !hasPdf;
+  if (els.headerExamTools) els.headerExamTools.hidden = !hasPdf;
 }
 
 async function loadPdfDocument(renderBuffer) {
@@ -475,6 +473,44 @@ function flushSaveNow() {
     console.warn("Save failed:", err);
     setSaveStatus("error");
   }
+}
+
+function normalizeTimerState({ pause = true } = {}) {
+  const duration = Math.max(
+    60,
+    Math.min(300 * 60, Number(state.timerDurationSeconds) || DEFAULT_TIMER_DURATION)
+  );
+  state.timerDurationSeconds = duration;
+
+  let remaining = Number(state.timerRemainingSeconds);
+  if (!Number.isFinite(remaining) || remaining <= 0 || remaining > duration) {
+    remaining = duration;
+  }
+  state.timerRemainingSeconds = Math.floor(remaining);
+  state.timerSeconds = getTimerElapsedSeconds();
+
+  if (pause) {
+    state.timerRunning = false;
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+function startTimerInterval() {
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    if (state.timerRemainingSeconds <= 0) {
+      pauseTimer();
+      floatingTimer?.refreshDisplay();
+      updateTimerDisplay();
+      return;
+    }
+    state.timerRemainingSeconds -= 1;
+    state.timerSeconds = getTimerElapsedSeconds();
+    syncTimerToWorkspace(getActiveWorkspace());
+    updateTimerDisplay();
+    if (state.timerRemainingSeconds % 30 === 0) scheduleSave();
+  }, 1000);
 }
 
 function pauseTimer() {
@@ -1109,8 +1145,6 @@ async function renderExam() {
   if (els.examPages) {
     els.examPages.classList.toggle("is-fit-width", state.fitWidth && !state.manualZoom);
   }
-  if (els.floatToolbar) els.floatToolbar.hidden = false;
-  floatToolbar?.restore();
   updateSearchNotice();
 }
 
@@ -1147,12 +1181,6 @@ function updateSearchNotice() {
 
 function updateDrawToolUi() {
   const tool = normalizeDrawTool(state.drawTool);
-  updateFloatingToolUi(tool, {
-    lineColor: state.lineColor,
-    highlightColor: state.highlightColor,
-    penColor: state.penColor,
-    penWidth: state.penWidth,
-  });
   document.querySelectorAll(".ws-exam-tool-btn[data-tool]").forEach((btn) => {
     btn.classList.toggle("is-active", btn.dataset.tool === tool);
   });
@@ -1476,43 +1504,6 @@ function setupAnswerEditor() {
   updateRowStats();
 }
 
-function initFloatingToolbar() {
-  if (!els.floatToolbar || floatToolbarReady) return;
-  floatToolbarReady = true;
-  floatToolbar = createFloatingToolbar({
-    toolbarEl: els.floatToolbar,
-    handleEl: document.getElementById("ws-float-handle"),
-    minimizeBtn: document.getElementById("ws-float-minimize"),
-    expandBtn: document.getElementById("ws-float-expand"),
-    orientBtn: document.getElementById("ws-float-orient"),
-    paneEl: els.exam,
-    getState: () => ({
-      floatToolbarPos: state.floatToolbarPos,
-      floatToolbarMinimized: state.floatToolbarMinimized,
-      floatToolbarVertical: state.floatToolbarVertical,
-    }),
-    setState: (patch) => Object.assign(state, patch),
-    onToolChange: (tool) => {
-      drawController?.cancelActive?.();
-      state.drawTool = tool;
-      updateDrawToolUi();
-      drawController?.refresh();
-      scheduleSave();
-    },
-    onAction: (action, value) => {
-      if (action === "lineColor") state.lineColor = value;
-      else if (action === "highlightColor") state.highlightColor = value;
-      else if (action === "penColor") state.penColor = value;
-      else if (action === "penWidth") state.penWidth = value;
-      else if (action === "undo") undoLastDrawAnnotation();
-      else if (action === "redo") handleDrawRedo();
-      else if (action === "deleteSelected") showToast("지우개 도구는 지원하지 않습니다.");
-      else if (action === "clearPage") clearPageDrawAnnotations();
-      else if (action === "savePosition") scheduleSave();
-    },
-  });
-}
-
 function initFloatingTimerWidget() {
   if (floatingTimer) return;
   const root = document.getElementById("ws-floating-timer");
@@ -1521,15 +1512,10 @@ function initFloatingTimerWidget() {
   floatingTimer = createFloatingTimer({
     rootEl: root,
     dragHandleEl: document.getElementById("ws-floating-timer-drag"),
-    displayEl: document.getElementById("ws-timer-display"),
-    startBtn: document.getElementById("ws-timer-start"),
-    resetBtn: document.getElementById("ws-timer-reset"),
-    settingsBtn: document.getElementById("ws-timer-settings"),
-    settingsPanelEl: document.getElementById("ws-timer-settings-panel"),
+    displayEl: document.getElementById("ws-float-timer-display"),
+    startBtn: document.getElementById("ws-float-timer-start"),
     presetButtons: [...root.querySelectorAll("[data-timer-minutes]")],
-    customInputEl: document.getElementById("ws-timer-custom-min"),
-    customApplyBtn: document.getElementById("ws-timer-custom-apply"),
-    examEndBtn: document.getElementById("ws-exam-end-btn"),
+    customInputEl: document.getElementById("ws-float-timer-custom-min"),
     getState: () => ({
       timerRunning: state.timerRunning,
       timerDurationSeconds: state.timerDurationSeconds,
@@ -1538,16 +1524,6 @@ function initFloatingTimerWidget() {
     }),
     setState: (patch) => {
       if (patch.timerPos) state.timerPos = patch.timerPos;
-    },
-    onStartPause: () => toggleTimerRunning(),
-    onReset: () => resetTimerCountdown(),
-    onDurationChange: (minutes) => setTimerDurationMinutes(minutes),
-    onExamEnd: () => {
-      if (!state.pdfFingerprint) {
-        showToast("시험지를 먼저 추가해주세요.");
-        return;
-      }
-      showExamEndModal();
     },
     onSave: () => scheduleSave(),
   });
@@ -1563,6 +1539,7 @@ function setTimerDurationMinutes(minutes) {
   state.timerSeconds = 0;
   syncTimerToWorkspace(getActiveWorkspace());
   updateTimerDisplay();
+  floatingTimer?.refreshDisplay();
   scheduleSave();
 }
 
@@ -1570,33 +1547,28 @@ function toggleTimerRunning() {
   if (state.timerRunning) {
     pauseTimer();
     floatingTimer?.refreshDisplay();
+    updateTimerDisplay();
     return;
   }
+  normalizeTimerState({ pause: false });
   if ((state.timerRemainingSeconds ?? 0) <= 0) {
     state.timerRemainingSeconds = state.timerDurationSeconds ?? DEFAULT_TIMER_DURATION;
   }
   state.timerRunning = true;
-  timerInterval = setInterval(() => {
-    if (state.timerRemainingSeconds <= 0) {
-      pauseTimer();
-      floatingTimer?.refreshDisplay();
-      return;
-    }
-    state.timerRemainingSeconds -= 1;
-    state.timerSeconds = getTimerElapsedSeconds();
-    syncTimerToWorkspace(getActiveWorkspace());
-    updateTimerDisplay();
-    if (state.timerRemainingSeconds % 30 === 0) scheduleSave();
-  }, 1000);
+  startTimerInterval();
+  floatingTimer?.refreshDisplay();
+  updateTimerDisplay();
 }
 
 function resetTimerCountdown() {
   clearInterval(timerInterval);
+  timerInterval = null;
   state.timerRunning = false;
   state.timerRemainingSeconds = state.timerDurationSeconds ?? DEFAULT_TIMER_DURATION;
   state.timerSeconds = 0;
   syncTimerToWorkspace(getActiveWorkspace());
   updateTimerDisplay();
+  floatingTimer?.refreshDisplay();
   scheduleSave();
 }
 
@@ -1917,7 +1889,7 @@ function updateTimerDisplay() {
   const m = Math.floor((remaining % 3600) / 60);
   const s = remaining % 60;
   els.timerDisplay.textContent = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  const startBtn = document.getElementById("ws-timer-start");
+  const startBtn = document.getElementById("ws-float-timer-start");
   if (startBtn) {
     startBtn.textContent = state.timerRunning ? "⏸" : "▶";
     startBtn.title = state.timerRunning ? "일시정지" : "시작";
@@ -2004,6 +1976,7 @@ async function restoreSession() {
     state.timerDurationSeconds = data.timerDurationSeconds ?? DEFAULT_TIMER_DURATION;
     state.timerRemainingSeconds = data.timerRemainingSeconds ?? state.timerDurationSeconds;
     state.timerPos = data.timerPos || loadTimerPosition();
+    normalizeTimerState({ pause: true });
     const savedTool = data.drawTool || TOOLS.view;
     state.drawTool = savedTool === "cursor" ? TOOLS.view : savedTool;
     if (![TOOLS.view, TOOLS.underline, TOOLS.highlighter, TOOLS.pen, TOOLS.eraser].includes(state.drawTool)) {
@@ -2049,10 +2022,10 @@ async function restoreSession() {
 
     applyPanelRatio(state.panelRatio);
     setMobileTab(state.mobileTab);
-    initFloatingToolbar();
     initFloatingTimerWidget();
     updateDrawToolUi();
     updateTimerDisplay();
+    floatingTimer?.refreshDisplay();
     renderDocSelect();
     renderPdfManageList();
 
@@ -2121,6 +2094,79 @@ async function restoreSession() {
   } catch (err) {
     console.warn("Session restore failed:", err);
   }
+}
+
+function bindTimerControls() {
+  const root = document.getElementById("ws-floating-timer");
+  const startBtn = document.getElementById("ws-float-timer-start");
+  const resetBtn = document.getElementById("ws-float-timer-reset");
+  const settingsBtn = document.getElementById("ws-float-timer-settings");
+  const settingsPanel = document.getElementById("ws-timer-settings-panel");
+  const customInput = document.getElementById("ws-float-timer-custom-min");
+  const customApplyBtn = document.getElementById("ws-float-timer-custom-apply");
+  const examEndBtn = document.getElementById("ws-float-exam-end-btn");
+  const presetButtons = root ? [...root.querySelectorAll("[data-timer-minutes]")] : [];
+
+  const syncTimerUi = () => {
+    updateTimerDisplay();
+    floatingTimer?.refreshDisplay();
+  };
+
+  startBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleTimerRunning();
+    syncTimerUi();
+  });
+
+  resetBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resetTimerCountdown();
+    syncTimerUi();
+  });
+
+  settingsBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!settingsPanel) return;
+    settingsPanel.hidden = !settingsPanel.hidden;
+    floatingTimer?.refreshDisplay();
+  });
+
+  presetButtons.forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setTimerDurationMinutes(Number(btn.dataset.timerMinutes));
+      if (settingsPanel) settingsPanel.hidden = true;
+      syncTimerUi();
+    });
+  });
+
+  customApplyBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setTimerDurationMinutes(Number(customInput?.value));
+    if (settingsPanel) settingsPanel.hidden = true;
+    syncTimerUi();
+  });
+
+  examEndBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!state.pdfFingerprint) {
+      showToast("시험지를 먼저 추가해주세요.");
+      return;
+    }
+    showExamEndModal();
+  });
+
+  document.addEventListener("mousedown", (e) => {
+    if (!settingsPanel || settingsPanel.hidden) return;
+    if (e.target.closest("#ws-floating-timer")) return;
+    settingsPanel.hidden = true;
+  });
 }
 
 function bindEvents() {
@@ -2322,9 +2368,9 @@ export async function initWorkspace() {
   cacheElements();
   bindVerticalResizer();
   initPreviewModal();
-  initFloatingToolbar();
   initFloatingTimerWidget();
   bindEvents();
+  bindTimerControls();
   applyViewMode("equal");
   updateDrawToolUi();
 
@@ -2349,9 +2395,10 @@ export async function initWorkspace() {
   await restoreSession();
   if (VIEW_PRESETS[state.viewMode]) applyPanelRatio(VIEW_PRESETS[state.viewMode]);
   else applyPanelRatio(state.panelRatio);
-  floatToolbar?.restore();
   floatingTimer?.restore();
+  normalizeTimerState({ pause: true });
   updateTimerDisplay();
+  floatingTimer?.refreshDisplay();
   applyAnswerTypography(getAnswerTypography(), { save: false });
 }
 

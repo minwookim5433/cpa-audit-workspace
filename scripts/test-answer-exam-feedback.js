@@ -107,7 +107,7 @@ async function main() {
   try {
     await setup(page);
 
-    await page.click("#ws-timer-start");
+    await page.click("#ws-float-timer-start");
     await sleep(300);
     await setPageText(page, 0, "① 시험 중 답안 작성 테스트입니다.");
     await sleep(300);

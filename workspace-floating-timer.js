@@ -47,19 +47,10 @@ export function createFloatingTimer({
   dragHandleEl,
   displayEl,
   startBtn,
-  resetBtn,
-  settingsBtn,
-  settingsPanelEl,
   presetButtons,
   customInputEl,
-  customApplyBtn,
-  examEndBtn,
   getState,
   setState,
-  onStartPause,
-  onReset,
-  onDurationChange,
-  onExamEnd,
   onSave,
 }) {
   if (!rootEl) return null;
@@ -117,12 +108,6 @@ export function createFloatingTimer({
     if (customInputEl) customInputEl.value = String(minutes);
   }
 
-  function setDurationMinutes(minutes) {
-    onDurationChange?.(clampDurationMinutes(minutes));
-    syncSettingsUi();
-    refreshDisplay();
-  }
-
   function canStartDrag(target) {
     if (!dragHandleEl) return false;
     return dragHandleEl.contains(target);
@@ -149,49 +134,7 @@ export function createFloatingTimer({
     if (!dragging) return;
     dragging = false;
     if (dragMoved) onSave?.();
-  });
-
-  startBtn?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (dragMoved) {
-      dragMoved = false;
-      return;
-    }
-    onStartPause?.();
-    refreshDisplay();
-  });
-
-  resetBtn?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    onReset?.();
-    refreshDisplay();
-  });
-
-  settingsBtn?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (!settingsPanelEl) return;
-    settingsPanelEl.hidden = !settingsPanelEl.hidden;
-    syncSettingsUi();
-  });
-
-  presetButtons?.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      setDurationMinutes(Number(btn.dataset.timerMinutes));
-      if (settingsPanelEl) settingsPanelEl.hidden = true;
-    });
-  });
-
-  customApplyBtn?.addEventListener("click", () => {
-    setDurationMinutes(Number(customInputEl?.value));
-    if (settingsPanelEl) settingsPanelEl.hidden = true;
-  });
-
-  examEndBtn?.addEventListener("click", () => onExamEnd?.());
-
-  document.addEventListener("mousedown", (e) => {
-    if (!settingsPanelEl || settingsPanelEl.hidden) return;
-    if (e.target.closest("#ws-floating-timer")) return;
-    settingsPanelEl.hidden = true;
+    dragMoved = false;
   });
 
   window.addEventListener("resize", () => {
@@ -200,5 +143,5 @@ export function createFloatingTimer({
 
   restore();
 
-  return { restore, refreshDisplay, applyPosition };
+  return { restore, refreshDisplay, applyPosition, syncSettingsUi };
 }

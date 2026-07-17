@@ -43,7 +43,13 @@ app.use(express.json({ limit: "5mb" }));
 
 const nodeModulesDir = path.join(__dirname, "node_modules");
 app.use("/node_modules", express.static(nodeModulesDir));
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname), {
+  setHeaders(res, filePath) {
+    if (/\.(js|css|html)$/i.test(filePath)) {
+      res.setHeader("Cache-Control", "no-cache");
+    }
+  },
+}));
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });

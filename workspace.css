@@ -234,30 +234,46 @@ body {
 }
 
 .ws-exam-toolbar {
+  display: none !important;
+}
+
+.ws-header-exam-tools {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 6px 16px;
-  background: var(--ws-surface);
-  border-bottom: 1px solid var(--ws-border);
-  flex-shrink: 0;
-}
-
-.ws-exam-toolbar .ws-exam-nav-row {
-  display: flex;
-  align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
-.ws-exam-toolbar .ws-toolbar-divider {
-  height: 22px;
+.ws-header-exam-tools[hidden] {
+  display: none !important;
+}
+
+.ws-header-exam-tools .ws-page-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+}
+
+.ws-header-exam-tools .ws-btn {
+  padding: 4px 8px;
+  font-size: 0.78rem;
+}
+
+.ws-header-exam-tools .ws-tool-select {
+  padding: 3px 6px;
+  font-size: 0.75rem;
 }
 
 .ws-pane-exam .ws-pane-scroll,
 .ws-pane-answer .ws-pane-scroll {
   flex: 1;
   min-height: 0;
+}
+
+.ws-float-toolbar {
+  display: none !important;
 }
 
 .ws-floating-timer {
@@ -449,11 +465,19 @@ body {
 }
 
 .ws-pane-exam {
-  flex: 0 0 50%;
+  flex: 0 0 40%;
 }
 
 .ws-pane-answer {
   flex: 1 1 auto;
+}
+
+.ws-pane-answer .ws-pane-scroll {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12px;
+  background: #e8eaed;
 }
 
 .ws-pane-scroll {
@@ -2201,8 +2225,9 @@ body.ws-modal-open {
 .ws-modal-sheet-container,
 .export-answer-page,
 .answer-doc-offscreen-mount {
-  --answer-page-width: 560px;
-  --answer-content-width: 540px;
+  --answer-page-width: 794px;
+  --answer-page-height: 1123px;
+  --answer-content-width: 774px;
   --answer-padding-left: 10px;
   --answer-padding-right: 10px;
   --answer-font-size: 14px;
@@ -2212,13 +2237,16 @@ body.ws-modal-open {
 
 .answer-doc-sheet,
 .answer-sheet-page {
-  width: var(--answer-page-width, 560px);
-  max-width: var(--answer-page-width, 560px);
+  width: var(--answer-page-width, 794px);
+  max-width: var(--answer-page-width, 794px);
+  min-height: var(--answer-page-height, 1123px);
   margin: 0 auto;
   background: #fff;
   border: 1px solid var(--ws-border);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 .answer-doc-header {
@@ -2243,7 +2271,8 @@ body.ws-modal-open {
 .answer-doc-body,
 .answer-sheet-content {
   position: relative;
-  min-height: calc(var(--answer-line-height, 28px) * 25);
+  flex: 1;
+  min-height: calc(var(--answer-page-height, 1123px) - 36px);
   box-sizing: border-box;
 }
 

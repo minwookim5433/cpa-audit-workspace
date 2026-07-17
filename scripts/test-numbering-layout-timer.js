@@ -152,9 +152,10 @@ async function main() {
 
     const h = await page.evaluate(() => ({
       noInternalNav: !document.querySelector("#ws-pane-exam .ws-exam-nav"),
-      hasTopToolbar: !!document.getElementById("ws-exam-toolbar"),
+      noExamToolbar: !document.getElementById("ws-exam-toolbar"),
+      hasHeaderTools: !!document.getElementById("ws-header-exam-tools"),
     }));
-    record(results, "H. 시험지 내부 툴바 제거", h.noInternalNav && h.hasTopToolbar, JSON.stringify(h));
+    record(results, "H. 시험지 위 툴바 제거", h.noInternalNav && h.noExamToolbar && h.hasHeaderTools, JSON.stringify(h));
 
     const i = await page.evaluate(() => ({
       prev: !!document.getElementById("ws-prev-page"),
@@ -206,7 +207,7 @@ async function main() {
     record(results, "M. 타이머 드래그", beforeDrag.left !== afterDrag.left || beforeDrag.top !== afterDrag.top, JSON.stringify(afterDrag));
 
     const beforeBtn = afterDrag;
-    await page.evaluate(() => document.getElementById("ws-timer-start")?.click());
+    await page.evaluate(() => document.getElementById("ws-float-timer-start")?.click());
     await sleep(200);
     const afterBtn = await page.evaluate(() => {
       const el = document.getElementById("ws-floating-timer");
@@ -214,20 +215,20 @@ async function main() {
     });
     record(results, "N. 버튼 클릭 시 이동 없음", beforeBtn.left === afterBtn.left && beforeBtn.top === afterBtn.top, "");
 
-    await page.evaluate(() => document.getElementById("ws-timer-settings")?.click());
+    await page.evaluate(() => document.getElementById("ws-float-timer-settings")?.click());
     await sleep(200);
     await page.evaluate(() => document.querySelector('[data-timer-minutes="120"]')?.click());
     await sleep(200);
-    const o = await page.$eval("#ws-timer-display", (el) => el.textContent.trim());
+    const o = await page.$eval("#ws-float-timer-display", (el) => el.textContent.trim());
     record(results, "O. 120분 → 02:00:00", o === "02:00:00", o);
 
-    await page.evaluate(() => document.getElementById("ws-timer-start")?.click());
+    await page.evaluate(() => document.getElementById("ws-float-timer-start")?.click());
     await sleep(1200);
-    await page.evaluate(() => document.getElementById("ws-timer-start")?.click());
-    await page.evaluate(() => document.getElementById("ws-timer-reset")?.click());
+    await page.evaluate(() => document.getElementById("ws-float-timer-start")?.click());
+    await page.evaluate(() => document.getElementById("ws-float-timer-reset")?.click());
     await sleep(200);
     const p = await page.evaluate(() => ({
-      display: document.getElementById("ws-timer-display")?.textContent,
+      display: document.getElementById("ws-float-timer-display")?.textContent,
       running: window.__workspaceTimer?.()?.running,
     }));
     record(results, "P. 시작/일시정지/초기화", p.display === "02:00:00", JSON.stringify(p));
@@ -251,7 +252,7 @@ async function main() {
     page.on("response", (res) => {
       if (res.url().includes(".pdf")) autoPdf = true;
     });
-    await page.evaluate(() => document.getElementById("ws-exam-end-btn")?.click());
+    await page.evaluate(() => document.getElementById("ws-float-exam-end-btn")?.click());
     await page.waitForSelector("#ws-exam-end-modal:not([hidden])");
     await page.evaluate(() => document.getElementById("ws-exam-end-confirm")?.click());
     await page.waitForSelector("#ws-exam-result-modal:not([hidden])", { timeout: 30000 });
@@ -275,11 +276,23 @@ async function main() {
     }));
     record(results, "U. 주석 UI", u.drawTool && u.annot, JSON.stringify(u));
 
-    const v = await page.evaluate(() => ({
-      sheet: !!document.querySelector(".answer-doc-sheet"),
-      editor: !!document.querySelector(".answer-doc-editor"),
-    }));
-    record(results, "V. 답안 레이아웃", v.sheet && v.editor, JSON.stringify(v));
+    const v = await page.evaluate(() => {
+      const sheet = document.querySelector(".answer-doc-sheet");
+      const editor = document.querySelector(".answer-doc-editor");
+      const rect = sheet?.getBoundingClientRect();
+      return {
+        sheet: !!sheet,
+        editor: !!editor,
+        width: Math.round(rect?.width || 0),
+        height: Math.round(rect?.height || 0),
+      };
+    });
+    record(
+      results,
+      "V. 답안 A4 레이아웃",
+      v.sheet && v.editor && v.width >= 790 && v.height >= 1100,
+      JSON.stringify(v)
+    );
 
     const failed = results.filter((r) => !r.ok).length;
     console.log(`\n=== Summary: ${results.length - failed}/${results.length} passed ===`);
