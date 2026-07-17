@@ -14,11 +14,15 @@ export const LETTER_SPACING_STEP = 0.1;
 export const ANSWER_PAGE_WIDTH_PX = 560;
 export const ANSWER_PADDING_LEFT_PX = 10;
 export const ANSWER_PADDING_RIGHT_PX = 10;
+export const ANSWER_HEADER_HEIGHT_PX = 36;
+export const ANSWER_ROWS_PER_PAGE = 25;
 export const ANSWER_LINE_HEIGHT_PX = 28;
 export const A4_EXPORT_PAGE_WIDTH_PX = 794;
 export const A4_EXPORT_PAGE_HEIGHT_PX = 1123;
 export const ANSWER_LIVE_PAGE_WIDTH_PX = A4_EXPORT_PAGE_WIDTH_PX;
 export const ANSWER_LIVE_PAGE_HEIGHT_PX = A4_EXPORT_PAGE_HEIGHT_PX;
+export const ANSWER_LIVE_BODY_HEIGHT_PX = ANSWER_LIVE_PAGE_HEIGHT_PX - ANSWER_HEADER_HEIGHT_PX;
+export const ANSWER_LIVE_LINE_HEIGHT_PX = ANSWER_LIVE_BODY_HEIGHT_PX / ANSWER_ROWS_PER_PAGE;
 export const A4_EXPORT_PAGE_PADDING_TOP_PX = 0;
 export const A4_EXPORT_PAGE_PADDING_RIGHT_PX = 0;
 export const A4_EXPORT_PAGE_PADDING_BOTTOM_PX = 0;
@@ -93,11 +97,13 @@ export function answerSheetCssVars(typography = {}) {
   return {
     "--answer-page-width": `${ANSWER_LIVE_PAGE_WIDTH_PX}px`,
     "--answer-page-height": `${ANSWER_LIVE_PAGE_HEIGHT_PX}px`,
+    "--answer-header-height": `${ANSWER_HEADER_HEIGHT_PX}px`,
+    "--answer-body-height": `${ANSWER_LIVE_BODY_HEIGHT_PX}px`,
     "--answer-content-width": `${ANSWER_LIVE_PAGE_WIDTH_PX - ANSWER_PADDING_LEFT_PX - ANSWER_PADDING_RIGHT_PX}px`,
     "--answer-padding-left": `${ANSWER_PADDING_LEFT_PX}px`,
     "--answer-padding-right": `${ANSWER_PADDING_RIGHT_PX}px`,
     "--answer-font-size": `${t.fontSize}px`,
-    "--answer-line-height": `${ANSWER_LINE_HEIGHT_PX}px`,
+    "--answer-line-height": `${ANSWER_LIVE_LINE_HEIGHT_PX}px`,
     "--answer-letter-spacing": `${t.letterSpacing}px`,
   };
 }
@@ -572,6 +578,10 @@ export function applyPdfA4ExportFillLayout(
 }
 
 export function finalizePdfA4ExportRowHeights(sheetEl) {
+  return syncAnswerSheetRowHeights(sheetEl);
+}
+
+export function syncAnswerSheetRowHeights(sheetEl) {
   const body = sheetEl?.querySelector(".answer-doc-body, .answer-sheet-content");
   const editor = sheetEl?.querySelector(".answer-doc-editor");
   if (!body) return null;
@@ -579,15 +589,21 @@ export function finalizePdfA4ExportRowHeights(sheetEl) {
   const bodyHeight = body.clientHeight;
   if (bodyHeight <= 0) return null;
 
-  const rowHeight = bodyHeight / 25;
+  const rowHeight = bodyHeight / ANSWER_ROWS_PER_PAGE;
   const rowHeightPx = `${rowHeight}px`;
   sheetEl.style.setProperty("--answer-line-height", rowHeightPx);
+  sheetEl.style.setProperty("--answer-body-height", `${bodyHeight}px`);
 
   if (editor) {
     editor.style.lineHeight = rowHeightPx;
+    editor.style.minHeight = `${bodyHeight}px`;
   }
 
   const bgLines = [...sheetEl.querySelectorAll(".answer-doc-bg-line")];
+  bgLines.forEach((line) => {
+    line.style.height = rowHeightPx;
+    line.style.flex = "0 0 auto";
+  });
   return {
     bodyHeight,
     rowHeight,

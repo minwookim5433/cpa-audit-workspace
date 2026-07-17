@@ -279,18 +279,26 @@ async function main() {
     const v = await page.evaluate(() => {
       const sheet = document.querySelector(".answer-doc-sheet");
       const editor = document.querySelector(".answer-doc-editor");
-      const rect = sheet?.getBoundingClientRect();
+      const body = document.querySelector(".answer-doc-body");
+      const lastLine = document.querySelector(".answer-doc-bg-line:last-child");
+      const sheetRect = sheet?.getBoundingClientRect();
+      const bodyRect = body?.getBoundingClientRect();
+      const lastLineRect = lastLine?.getBoundingClientRect();
+      const lineHeight = parseFloat(getComputedStyle(editor || sheet).lineHeight || "0");
       return {
         sheet: !!sheet,
         editor: !!editor,
-        width: Math.round(rect?.width || 0),
-        height: Math.round(rect?.height || 0),
+        width: Math.round(sheetRect?.width || 0),
+        height: Math.round(sheetRect?.height || 0),
+        lineHeight: Math.round(lineHeight * 100) / 100,
+        bottomGap: Math.round((sheetRect?.bottom || 0) - (lastLineRect?.bottom || 0)),
+        bodyFills: Math.abs((bodyRect?.bottom || 0) - (lastLineRect?.bottom || 0)) <= 2,
       };
     });
     record(
       results,
       "V. 답안 A4 레이아웃",
-      v.sheet && v.editor && v.width >= 790 && v.height >= 1100,
+      v.sheet && v.editor && v.width >= 790 && v.height >= 1100 && v.lineHeight >= 40 && v.bottomGap <= 4,
       JSON.stringify(v)
     );
 

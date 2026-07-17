@@ -2227,11 +2227,13 @@ body.ws-modal-open {
 .answer-doc-offscreen-mount {
   --answer-page-width: 794px;
   --answer-page-height: 1123px;
+  --answer-header-height: 36px;
+  --answer-body-height: 1087px;
   --answer-content-width: 774px;
   --answer-padding-left: 10px;
   --answer-padding-right: 10px;
   --answer-font-size: 14px;
-  --answer-line-height: 28px;
+  --answer-line-height: 43.48px;
   --answer-letter-spacing: 0px;
 }
 
@@ -2239,6 +2241,7 @@ body.ws-modal-open {
 .answer-sheet-page {
   width: var(--answer-page-width, 794px);
   max-width: var(--answer-page-width, 794px);
+  height: var(--answer-page-height, 1123px);
   min-height: var(--answer-page-height, 1123px);
   margin: 0 auto;
   background: #fff;
@@ -2247,12 +2250,14 @@ body.ws-modal-open {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .answer-doc-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex: 0 0 auto;
   padding: 6px 10px 4px;
   border-bottom: 1px solid #c8ccd4;
 }
@@ -2271,8 +2276,9 @@ body.ws-modal-open {
 .answer-doc-body,
 .answer-sheet-content {
   position: relative;
-  flex: 1;
-  min-height: calc(var(--answer-page-height, 1123px) - 36px);
+  flex: 1 1 auto;
+  min-height: var(--answer-body-height, 1087px);
+  height: var(--answer-body-height, 1087px);
   box-sizing: border-box;
 }
 
@@ -2282,26 +2288,32 @@ body.ws-modal-open {
   inset: 0;
   pointer-events: none;
   z-index: 0;
+  display: flex;
+  flex-direction: column;
   padding: 0 var(--answer-padding-right, 10px) 0 var(--answer-padding-left, 10px);
   box-sizing: border-box;
 }
 
 .answer-doc-bg-line {
-  height: var(--answer-line-height, 28px);
+  flex: 1 1 0;
+  min-height: 0;
+  height: var(--answer-line-height, 43.48px);
   border-bottom: 1px solid #c8ccd4;
   box-sizing: border-box;
 }
 
 .answer-doc-editor {
-  position: relative;
+  position: absolute;
+  inset: 0;
   z-index: 1;
-  min-height: calc(var(--answer-line-height, 28px) * 25);
+  min-height: 100%;
+  height: 100%;
   padding: 0 var(--answer-padding-right, 10px) 0 var(--answer-padding-left, 10px);
   font-family: "Batang", "Nanum Myeongjo", serif;
   font-size: var(--answer-font-size, 14px);
   font-weight: normal;
   letter-spacing: var(--answer-letter-spacing, 0px);
-  line-height: var(--answer-line-height, 28px);
+  line-height: var(--answer-line-height, 43.48px);
   white-space: pre-wrap;
   word-break: break-all;
   overflow-wrap: anywhere;

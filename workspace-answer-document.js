@@ -34,6 +34,7 @@ import {
   DEFAULT_ANSWER_FONT_SIZE,
   DEFAULT_ANSWER_LETTER_SPACING,
   normalizeAnswerTypography,
+  syncAnswerSheetRowHeights,
 } from "./workspace-answer-typography.js";
 import {
   getEditorContent,
@@ -298,6 +299,10 @@ export function createAnswerDocumentController({
     if (container) applyAnswerSheetVars(container, t);
     const sheet = container?.querySelector(".answer-doc-sheet");
     if (sheet) applyAnswerSheetVars(sheet, t);
+    requestAnimationFrame(() => {
+      const liveSheet = container?.querySelector(".answer-doc-sheet");
+      if (liveSheet) syncAnswerSheetRowHeights(liveSheet);
+    });
   }
 
   function decorateClone(clone, liveSheet) {
