@@ -107,8 +107,29 @@
         </select>
         <button type="button" id="ws-doc-manage" class="ws-btn" title="시험지 관리">⚙</button>
       </div>
-      <button type="button" id="ws-preview-btn" class="ws-btn">답안지 미리보기</button>
-      <button type="button" id="ws-save-pause-btn" class="ws-btn" title="답안·주석·페이지 위치를 저장하고 나중에 이어서 풀기">저장하고 나가기</button>
+      <div id="ws-floating-timer" class="ws-toolbar-timer" hidden aria-label="시험 타이머">
+        <div class="ws-toolbar-timer-body">
+          <span id="ws-float-timer-display" class="ws-toolbar-timer-display">02:00:00</span>
+          <button type="button" id="ws-float-timer-start" class="ws-toolbar-timer-btn" title="시작">▶</button>
+          <button type="button" id="ws-float-timer-reset" class="ws-toolbar-timer-btn" title="초기화">↺</button>
+          <button type="button" id="ws-float-timer-settings" class="ws-toolbar-timer-btn" title="시간 설정">⚙</button>
+          <button type="button" id="ws-float-exam-end-btn" class="ws-toolbar-timer-btn ws-toolbar-timer-end" title="시험 종료">종료</button>
+        </div>
+        <div id="ws-timer-settings-panel" class="ws-toolbar-timer-settings" hidden>
+          <div class="ws-toolbar-timer-presets">
+            <button type="button" class="ws-btn" data-timer-minutes="30">30분</button>
+            <button type="button" class="ws-btn" data-timer-minutes="60">60분</button>
+            <button type="button" class="ws-btn" data-timer-minutes="90">90분</button>
+            <button type="button" class="ws-btn is-active" data-timer-minutes="120">120분</button>
+          </div>
+          <label class="ws-toolbar-timer-custom">
+            <span>직접 입력(분)</span>
+            <input type="number" id="ws-float-timer-custom-min" min="1" max="300" value="120" class="ws-input-short" />
+            <button type="button" id="ws-float-timer-custom-apply" class="ws-btn">적용</button>
+          </label>
+        </div>
+      </div>
+      <button type="button" id="ws-save-pause-btn" class="ws-btn" title="답안·주석·페이지 위치를 임시 저장하고 나중에 이어서 풀기">임시저장</button>
       <span id="ws-save-status" class="ws-save-status">저장됨</span>
       <div class="ws-toolbar-spacer"></div>
       <div id="ws-auth-user" class="ws-auth-user" hidden>
@@ -123,7 +144,7 @@
       <ol class="ws-usage-guide-list">
         <li>시험지 PDF 선택</li>
         <li>오른쪽 답안지 작성</li>
-        <li>중간에 멈추려면 <strong>저장하고 나가기</strong> — 다음에 같은 시험지를 열면 이어서 풀 수 있습니다</li>
+        <li>중간에 멈추려면 <strong>임시저장</strong> — 다음에 같은 시험지를 열면 이어서 풀 수 있습니다</li>
         <li>시험 종료 후 PDF 저장</li>
       </ol>
       <p class="ws-usage-guide-note">풀이 내용(답안·주석·페이지·타이머)은 자동 저장됩니다. 북마크는 시험지 페이지 위치 표시용이며, 이어 풀기는 자동 저장으로 처리됩니다.</p>
@@ -159,7 +180,7 @@
 
         <div id="ws-panel-timer" class="ws-sidebar-panel is-active">
           <h3 class="ws-panel-title">시험 타이머</h3>
-          <p class="ws-panel-desc">플로팅 타이머를 사용하세요.</p>
+          <p class="ws-panel-desc">상단 툴바의 타이머를 사용하세요.</p>
         </div>
 
         <div id="ws-panel-bookmarks" class="ws-sidebar-panel mvp-hidden" hidden>
@@ -249,15 +270,31 @@
             <div class="ws-header-exam-tools ws-exam-pane-toolbar" id="ws-header-exam-tools" hidden>
               <button type="button" id="ws-prev-page" class="ws-btn ws-btn-fixed" disabled title="이전">◀</button>
               <span class="ws-page-indicator">
-                <input type="number" id="ws-page-input" min="1" value="1" class="ws-input-short" />
+                <span id="ws-page-current" class="ws-page-current">1</span>
                 <span id="ws-page-label">/ —</span>
               </span>
               <button type="button" id="ws-next-page" class="ws-btn ws-btn-fixed" disabled title="다음">▶</button>
+              <span class="ws-toolbar-divider ws-toolbar-divider-inline" aria-hidden="true"></span>
+              <div class="ws-exam-search-bar" id="ws-exam-search-bar">
+                <input
+                  type="search"
+                  id="ws-exam-search-input"
+                  class="ws-exam-search-input"
+                  placeholder="검색어"
+                  aria-label="시험지 검색"
+                  autocomplete="off"
+                />
+                <button type="button" id="ws-exam-search-prev" class="ws-btn ws-btn-fixed" title="이전 결과">▲</button>
+                <button type="button" id="ws-exam-search-next" class="ws-btn ws-btn-fixed" title="다음 결과">▼</button>
+                <span id="ws-exam-search-status" class="ws-exam-search-status">0 / 0</span>
+              </div>
+              <span id="ws-exam-search-notice" class="ws-exam-search-notice" hidden></span>
+              <span class="ws-toolbar-divider ws-toolbar-divider-inline" aria-hidden="true"></span>
               <button type="button" id="ws-zoom-out" class="ws-btn ws-btn-fixed" title="축소">−</button>
               <span id="ws-zoom-label" class="ws-zoom-label-fixed">100%</span>
               <button type="button" id="ws-zoom-in" class="ws-btn ws-btn-fixed" title="확대">+</button>
               <button type="button" id="ws-fit-width" class="ws-btn ws-btn-fit" title="너비 맞춤">맞춤</button>
-              <button type="button" class="ws-exam-tool-btn ws-btn-fixed is-active" data-tool="view" title="보기">보기</button>
+              <button type="button" class="ws-exam-tool-btn ws-btn-fixed is-active" data-tool="view" title="커서">↖ 커서</button>
               <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="underline" title="밑줄">밑줄</button>
               <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="highlighter" title="형광펜">형광</button>
               <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="pen" title="펜">펜</button>
@@ -284,7 +321,6 @@
                 </select>
               </span>
               <button type="button" id="ws-annot-undo" class="ws-btn ws-btn-fixed" title="주석 실행 취소">↶</button>
-              <button type="button" id="ws-annot-clear-page" class="ws-btn ws-btn-fixed" title="현재 페이지 주석 삭제">🗑</button>
             </div>
             <div class="ws-pane-scroll ws-exam-scroll" id="ws-exam">
               <div id="ws-exam-pages" class="ws-exam-pages"></div>
@@ -621,30 +657,6 @@
         <button type="button" class="ws-btn ws-btn-primary" data-action="import-local">가져오기</button>
         <button type="button" class="ws-btn" data-action="skip-import">나중에</button>
       </footer>
-    </div>
-  </div>
-
-  <div id="ws-floating-timer" class="ws-floating-timer" hidden aria-label="시험 타이머">
-    <div class="ws-floating-timer-drag" id="ws-floating-timer-drag" title="드래그하여 이동"></div>
-    <div class="ws-floating-timer-body">
-      <span id="ws-float-timer-display" class="ws-floating-timer-display">02:00:00</span>
-      <button type="button" id="ws-float-timer-start" class="ws-floating-timer-btn" title="시작">▶</button>
-      <button type="button" id="ws-float-timer-reset" class="ws-floating-timer-btn" title="초기화">↺</button>
-      <button type="button" id="ws-float-timer-settings" class="ws-floating-timer-btn" title="시간 설정">⚙</button>
-      <button type="button" id="ws-float-exam-end-btn" class="ws-floating-timer-btn ws-floating-timer-end" title="시험 종료">종료</button>
-    </div>
-    <div id="ws-timer-settings-panel" class="ws-floating-timer-settings" hidden>
-      <div class="ws-floating-timer-presets">
-        <button type="button" class="ws-btn" data-timer-minutes="30">30분</button>
-        <button type="button" class="ws-btn" data-timer-minutes="60">60분</button>
-        <button type="button" class="ws-btn" data-timer-minutes="90">90분</button>
-        <button type="button" class="ws-btn is-active" data-timer-minutes="120">120분</button>
-      </div>
-      <label class="ws-floating-timer-custom">
-        <span>직접 입력(분)</span>
-        <input type="number" id="ws-float-timer-custom-min" min="1" max="300" value="120" class="ws-input-short" />
-        <button type="button" id="ws-float-timer-custom-apply" class="ws-btn">적용</button>
-      </label>
     </div>
   </div>
 

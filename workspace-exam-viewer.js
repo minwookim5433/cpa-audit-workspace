@@ -3,6 +3,7 @@
  */
 import * as pdfjsLib from "/node_modules/pdfjs-dist/build/pdf.mjs";
 import { assessTextContent } from "./study-problem-range.js";
+import { normalizePdfSearchText } from "./workspace-search.js";
 
 export const MOBILE_BREAKPOINT = 900;
 
@@ -14,7 +15,7 @@ function getPixelRatio() {
   return Math.max(1, window.devicePixelRatio || 1);
 }
 
-async function renderOnePage(pdfDoc, pageNum, scale, highlightQuery) {
+async function renderOnePage(pdfDoc, pageNum, scale, highlightQuery, activePageMatchIndex = -1) {
   const page = await pdfDoc.getPage(pageNum);
   const viewport = page.getViewport({ scale });
   const pixelRatio = getPixelRatio();
@@ -57,7 +58,7 @@ async function renderOnePage(pdfDoc, pageNum, scale, highlightQuery) {
       viewport,
     });
     await textLayer.render();
-    if (highlightQuery) highlightTextLayer(textLayerDiv, highlightQuery);
+    if (highlightQuery) highlightTextLayer(textLayerDiv, highlightQuery, activePageMatchIndex);
   }
 
   const drawLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -84,19 +85,96 @@ async function renderOnePage(pdfDoc, pageNum, scale, highlightQuery) {
   };
 }
 
-function highlightTextLayer(layer, query) {
+function highlightTextLayer(layer, query, activePageMatchIndex = -1) {
   if (!query || query.length < 1) return;
-  const q = query.toLowerCase();
-  layer.querySelectorAll("span").forEach((span) => {
-    const t = span.textContent || "";
-    if (t.toLowerCase().includes(q)) span.classList.add("exam-search-hit");
+
+  const q = normalizePdfSearchText(query).toLowerCase();
+  if (!q) return;
+
+  const spans = [...layer.querySelectorAll("span")].filter((span) => span.textContent);
+  if (!spans.length) return;
+
+  const spanTexts = spans.map((span) => span.textContent || "");
+  let normalizedFull = "";
+  const charMap = [];
+
+  spanTexts.forEach((text, spanIndex) => {
+    for (let offsetInSpan = 0; offsetInSpan < text.length; offsetInSpan += 1) {
+      const ch = text[offsetInSpan];
+      if (/\s/.test(ch)) continue;
+      charMap.push({ spanIndex, offsetInSpan });
+      normalizedFull += ch.normalize("NFC").toLowerCase();
+    }
+  });
+
+  const matchStarts = [];
+  let scanIdx = 0;
+  while (scanIdx < normalizedFull.length) {
+    const found = normalizedFull.indexOf(q, scanIdx);
+    if (found === -1) break;
+    matchStarts.push(found);
+    scanIdx = found + q.length;
+  }
+  if (!matchStarts.length) return;
+
+  const spanMatchMap = spans.map(() => new Map());
+  matchStarts.forEach((start, matchIdx) => {
+    for (let charIdx = start; charIdx < start + q.length && charIdx < charMap.length; charIdx += 1) {
+      const { spanIndex, offsetInSpan } = charMap[charIdx];
+      if (!spanMatchMap[spanIndex].has(offsetInSpan)) {
+        spanMatchMap[spanIndex].set(offsetInSpan, matchIdx);
+      }
+    }
+  });
+
+  spans.forEach((span, spanIndex) => {
+    const text = spanTexts[spanIndex];
+    const matchedOffsets = spanMatchMap[spanIndex];
+    if (!matchedOffsets.size) return;
+
+    const fragment = document.createDocumentFragment();
+    let i = 0;
+    while (i < text.length) {
+      if (matchedOffsets.has(i)) {
+        const matchIdx = matchedOffsets.get(i);
+        let j = i + 1;
+        while (j < text.length && matchedOffsets.get(j) === matchIdx) j += 1;
+        const mark = document.createElement("mark");
+        mark.className = "exam-search-mark";
+        if (matchIdx === activePageMatchIndex) mark.classList.add("is-active");
+        mark.textContent = text.slice(i, j);
+        fragment.appendChild(mark);
+        i = j;
+      } else {
+        let j = i + 1;
+        while (j < text.length && !matchedOffsets.has(j)) j += 1;
+        fragment.appendChild(document.createTextNode(text.slice(i, j)));
+        i = j;
+      }
+    }
+
+    span.textContent = "";
+    span.appendChild(fragment);
   });
 }
 
-export async function renderSinglePage(pdfDoc, pageNum, scale, containerEl, highlightQuery = "") {
+export async function renderSinglePage(
+  pdfDoc,
+  pageNum,
+  scale,
+  containerEl,
+  highlightQuery = "",
+  activePageMatchIndex = -1
+) {
   if (!pdfDoc || !containerEl) return { isTextRich: false, viewport: null };
 
-  const { wrap, isTextRich, viewport } = await renderOnePage(pdfDoc, pageNum, scale, highlightQuery);
+  const { wrap, isTextRich, viewport } = await renderOnePage(
+    pdfDoc,
+    pageNum,
+    scale,
+    highlightQuery,
+    activePageMatchIndex
+  );
 
   containerEl.innerHTML = "";
   containerEl.append(wrap);

@@ -41,6 +41,7 @@ import {
 } from "./workspace-cloud-service.js";
 import { showCloudSaveDebugPanel } from "./workspace-cloud-debug.js";
 import {
+  DEBUG_SAVE,
   showSaveTraceStatus,
   traceSave,
   traceSaveError,
@@ -617,7 +618,7 @@ export function initAttemptBridge({
     }
 
     traceSave("4", `payload fields: ${["documentKey", "documentName", "snapshot", "legacyFingerprint"].join(", ")}`);
-    showSaveTraceStatus("데이터 준비 완료");
+    if (DEBUG_SAVE) showSaveTraceStatus("데이터 준비 완료");
 
     return upsertCloudWorkspaceWithDebug({
       documentKey,
@@ -664,7 +665,7 @@ export function initAttemptBridge({
       const snapshot = buildWorkspaceSnapshot(state, getActiveWorkspace());
       attemptSession.markClean(snapshot);
       setSaveStatus?.("savedDb");
-      showToast?.("저장되었습니다.");
+      showToast?.("임시저장 완료");
       return true;
     } catch (err) {
       traceSaveError({
@@ -695,8 +696,8 @@ export function initAttemptBridge({
         data: null,
       });
       setSaveStatus?.("error");
-      showToast?.("저장에 실패했습니다.");
-      showStatus?.("저장에 실패했습니다.", "error");
+      showToast?.("임시저장에 실패했습니다. 잠시 후 다시 시도해주세요.");
+      showStatus?.("임시저장에 실패했습니다. 잠시 후 다시 시도해주세요.", "error");
       return false;
     } finally {
       saveAndPauseInFlight = false;

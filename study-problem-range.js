@@ -5,7 +5,8 @@
 function textFromContent(textContent) {
   return (textContent?.items || [])
     .map((item) => String(item?.str ?? ""))
-    .join(" ")
+    .join("")
+    .replace(/\u00a0/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

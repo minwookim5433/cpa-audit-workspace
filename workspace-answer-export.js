@@ -80,6 +80,25 @@ export function buildAnswerPdfFilename(source) {
   return year ? `${year} 회계감사 답안지.pdf` : "회계감사 답안지.pdf";
 }
 
+const INVALID_FILENAME_CHARS = /[\\/:*?"<>|]/g;
+const MAX_PDF_BASE_NAME_LENGTH = 120;
+
+export function sanitizePdfBaseName(input) {
+  let name = String(input ?? "").trim();
+  name = name.replace(/\.pdf$/i, "");
+  name = name.replace(INVALID_FILENAME_CHARS, "");
+  name = name.replace(/\s+/g, " ").trim();
+  if (name.length > MAX_PDF_BASE_NAME_LENGTH) {
+    name = name.slice(0, MAX_PDF_BASE_NAME_LENGTH).trim();
+  }
+  return name;
+}
+
+export function buildPdfFilenameFromBase(base) {
+  const sanitized = sanitizePdfBaseName(base);
+  return sanitized ? `${sanitized}.pdf` : "";
+}
+
 export function buildAnswerHtmlFilename(source) {
   const year = resolveExamYear(source);
   return year ? `${year} 회계감사 답안지.html` : "회계감사 답안지.html";

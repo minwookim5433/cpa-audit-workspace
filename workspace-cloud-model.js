@@ -91,7 +91,7 @@ export function mapCloudSaveError(err) {
     return "저장에 실패했습니다. (서버 응답 없음)";
   }
   if (message.includes("network") || message.includes("fetch") || message.includes("failed to fetch")) {
-    return "네트워크 오류로 저장하지 못했습니다. 답안은 이 기기에 보존됩니다.";
+    return "네트워크 오류로 임시저장하지 못했습니다. 답안은 이 기기에 보존됩니다.";
   }
-  return "저장에 실패했습니다. 답안은 이 기기에 보존됩니다.";
+  return "임시저장에 실패했습니다. 잠시 후 다시 시도해주세요.";
 }

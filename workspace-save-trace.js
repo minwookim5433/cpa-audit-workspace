@@ -1,10 +1,13 @@
 /**
- * [저장하고 나가기] 단계별 진단 — Console + 화면 상태 패널
+ * [임시저장] 단계별 진단 — 개발 환경에서만 Console + 화면 패널
  */
+export const DEBUG_SAVE = false;
+
 const PANEL_ID = "ws-save-trace-status";
 const BODY_ID = "ws-save-trace-status-body";
 
 function ensurePanel() {
+  if (!DEBUG_SAVE) return null;
   let panel = document.getElementById(PANEL_ID);
   if (panel) return panel;
 
@@ -29,9 +32,10 @@ function ensurePanel() {
 }
 
 function appendPanelLine(line) {
+  if (!DEBUG_SAVE) return;
   const panel = ensurePanel();
   const body = document.getElementById(BODY_ID);
-  if (!body) return;
+  if (!panel || !body) return;
 
   const prefix = body.textContent ? "\n" : "";
   body.textContent += `${prefix}${line}`;
@@ -40,14 +44,18 @@ function appendPanelLine(line) {
 }
 
 export function resetSaveTracePanel() {
+  if (!DEBUG_SAVE) return;
   const panel = ensurePanel();
   const body = document.getElementById(BODY_ID);
   if (body) body.textContent = "";
-  panel.hidden = false;
-  panel.classList.remove("is-success", "is-error");
+  if (panel) {
+    panel.hidden = false;
+    panel.classList.remove("is-success", "is-error");
+  }
 }
 
 export function showSaveTraceStatus(message) {
+  if (!DEBUG_SAVE) return;
   ensurePanel();
   appendPanelLine(String(message ?? ""));
 }
@@ -55,8 +63,10 @@ export function showSaveTraceStatus(message) {
 export function traceSave(step, detail = null) {
   const suffix = detail == null || detail === "" ? "" : ` ${detail}`;
   const line = `[SAVE_TRACE ${step}]${suffix}`;
-  console.log(line);
-  appendPanelLine(line);
+  if (DEBUG_SAVE) {
+    console.log(line);
+    appendPanelLine(line);
+  }
 }
 
 export function traceSaveError(error = {}) {
@@ -70,17 +80,19 @@ export function traceSaveError(error = {}) {
   ];
   const line = parts.join("\n");
   console.error(line);
-  appendPanelLine(line);
-
-  const panel = ensurePanel();
-  panel.classList.add("is-error");
+  if (DEBUG_SAVE) {
+    appendPanelLine(line);
+    const panel = ensurePanel();
+    panel?.classList.add("is-error");
+  }
 }
 
 export function traceSaveSuccess(message = "save succeeded") {
   traceSave("7", message);
-  showSaveTraceStatus("저장 성공");
+  if (!DEBUG_SAVE) return;
+  showSaveTraceStatus("임시저장 완료");
   const panel = ensurePanel();
-  panel.classList.add("is-success");
+  panel?.classList.add("is-success");
 }
 
 let saveExitControlBound = false;
@@ -94,8 +106,10 @@ async function waitForAttemptBridge() {
   let bridge = resolveAttemptBridge();
   if (bridge?.saveAndPause) return bridge;
 
-  showSaveTraceStatus("워크스페이스 준비 중…");
-  traceSave("2b", "waiting for workspace init");
+  if (DEBUG_SAVE) {
+    showSaveTraceStatus("워크스페이스 준비 중…");
+    traceSave("2b", "waiting for workspace init");
+  }
   try {
     await window.__ensureWorkspace?.();
   } catch (err) {
@@ -117,10 +131,12 @@ async function handleSaveAndExitClick(event) {
   event.preventDefault();
   event.stopPropagation();
 
-  resetSaveTracePanel();
-  traceSave("1", "save-and-exit button clicked");
-  showSaveTraceStatus("저장 요청 시작");
-  traceSave("2", "handler entered");
+  if (DEBUG_SAVE) {
+    resetSaveTracePanel();
+    traceSave("1", "save-and-exit button clicked");
+    showSaveTraceStatus("임시저장 요청 시작");
+    traceSave("2", "handler entered");
+  }
 
   if (saveExitClickInFlight) {
     traceSaveError({
@@ -137,7 +153,7 @@ async function handleSaveAndExitClick(event) {
       message: "attemptBridge.saveAndPause가 준비되지 않았습니다.",
       details: "initWorkspace() 이후에도 bridge를 찾지 못했습니다.",
     });
-    showSaveTraceStatus("저장 모듈 미준비");
+    if (DEBUG_SAVE) showSaveTraceStatus("저장 모듈 미준비");
     return;
   }
 
@@ -163,5 +179,7 @@ export function bindSaveAndExitControl() {
 
   const root = document.getElementById("app-root") || document.body;
   root.addEventListener("click", handleSaveAndExitClick);
-  console.info("[save-exit] delegation bound:", root.id || "body", "→ #ws-save-pause-btn");
+  if (DEBUG_SAVE) {
+    console.info("[save-exit] delegation bound:", root.id || "body", "→ #ws-save-pause-btn");
+  }
 }

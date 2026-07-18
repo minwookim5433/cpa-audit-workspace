@@ -6,13 +6,14 @@
 
 import {
 
-  buildAnswerPdfFilename,
+  buildPdfFilenameFromBase,
 
   downloadPdfFromClones,
 
   NoAnswerContentError,
 
 } from "./workspace-answer-export.js";
+import { promptPdfExportBaseName } from "./workspace-export-name.js";
 
 import { applyAnswerSheetVars } from "./workspace-answer-typography.js";
 import { buildAnswerSheetFromPageHtml } from "./workspace-answer-clone.js";
@@ -291,13 +292,17 @@ export function createExamResultController({
 
     });
 
-    const filename = buildAnswerPdfFilename({
+    const baseName = await promptPdfExportBaseName({
       year: currentAttempt.year,
       documentTitle: currentAttempt.documentTitle || currentAttempt.docTitle,
       docTitle: currentAttempt.documentTitle || currentAttempt.docTitle,
       pdfName: currentAttempt.pdfFileName,
       fileName: currentAttempt.pdfFileName,
     });
+
+    if (!baseName) return;
+
+    const filename = buildPdfFilenameFromBase(baseName);
 
     try {
 

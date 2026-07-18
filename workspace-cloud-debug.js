@@ -1,6 +1,7 @@
 /**
  * 임시 Supabase 저장 디버그 패널 (개발용)
  */
+import { DEBUG_SAVE } from "./workspace-save-trace.js";
 const PANEL_ID = "ws-cloud-save-debug";
 
 function escapeHtml(text) {
@@ -61,6 +62,7 @@ function ensurePanel() {
 }
 
 export function showCloudSaveDebugPanel(report) {
+  if (!DEBUG_SAVE) return;
   const panel = ensurePanel();
   const body = document.getElementById("ws-cloud-save-debug-body");
   if (!body) return;

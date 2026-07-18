@@ -8,7 +8,13 @@ import {
   detectPdfTextRich,
   calcFitWidthScale,
 } from "./workspace-exam-viewer.js";
-import { buildPageTexts, searchInPages, renderSearchResults } from "./workspace-search.js";
+import {
+  searchPdfDocument,
+  renderSearchResults,
+  getPageTextCache,
+  clearPageTextCache,
+  clearAllPageTextCaches,
+} from "./workspace-search.js";
 import { createBookmark, renderBookmarkPanel } from "./workspace-bookmarks.js";
 import { TOOLS, createDrawController, isDrawingTool, isInteractTool, normalizeDrawTool, getAnnotationSurface } from "./workspace-draw-tools.js";
 import { applyDrawToolCursor, CURSOR_SPECS } from "./workspace-draw-cursors.js";
@@ -94,6 +100,7 @@ const state = {
   searchQuery: "",
   searchResults: [],
   searchIdx: 0,
+  searchHighlightDismissed: false,
   drawTool: TOOLS.view,
   lineColor: "red",
   highlightColor: "yellow",
@@ -117,6 +124,9 @@ const state = {
 };
 
 let renderToken = 0;
+let searchRunToken = 0;
+let searchDebounceTimer = null;
+const SEARCH_DEBOUNCE_MS = 350;
 let timerInterval = null;
 let saveDebounce = null;
 let previewController = null;
@@ -148,7 +158,7 @@ function cacheElements() {
     answerEditor: "ws-answer-editor",
     prevPage: "ws-prev-page",
     nextPage: "ws-next-page",
-    pageInput: "ws-page-input",
+    pageCurrent: "ws-page-current",
     pageLabel: "ws-page-label",
     ansPrev: "ws-ans-prev",
     ansNext: "ws-ans-next",
@@ -162,6 +172,11 @@ function cacheElements() {
     searchInput: "ws-search-input",
     searchResults: "ws-search-results",
     searchNotice: "ws-search-notice",
+    examSearchInput: "ws-exam-search-input",
+    examSearchPrev: "ws-exam-search-prev",
+    examSearchNext: "ws-exam-search-next",
+    examSearchStatus: "ws-exam-search-status",
+    examSearchNotice: "ws-exam-search-notice",
     bookmarkPanel: "ws-bookmark-panel",
     rowStats: "ws-row-stats",
     saveStatus: "ws-save-status",
@@ -169,7 +184,6 @@ function cacheElements() {
     paneExam: "ws-pane-exam",
     paneAnswer: "ws-pane-answer",
     vResizer: "ws-v-resizer",
-    previewBtn: "ws-preview-btn",
     answerPreviewBtn: "ws-answer-preview-btn",
     previewModal: "ws-preview-modal",
     mobileTabs: "ws-mobile-tabs",
@@ -200,13 +214,13 @@ function showToast(msg) {
 function setSaveStatus(kind = "saved") {
   if (!els.saveStatus) return;
   if (kind === "pending") {
-    els.saveStatus.textContent = "저장 중…";
+    els.saveStatus.textContent = "임시저장 중…";
     els.saveStatus.className = "ws-save-status is-pending";
   } else if (kind === "error") {
-    els.saveStatus.textContent = "저장 실패";
+    els.saveStatus.textContent = "임시저장 실패";
     els.saveStatus.className = "ws-save-status is-error";
   } else if (kind === "savedDb") {
-    els.saveStatus.textContent = "저장 완료";
+    els.saveStatus.textContent = "임시저장 완료";
     els.saveStatus.className = "ws-save-status";
   } else {
     els.saveStatus.textContent = "저장됨";
@@ -237,29 +251,153 @@ function showResumeBanner(source = "session") {
 
 async function restoreExamViewportFromWorkspace() {
   if (!state.pdfDoc) return;
-  const saved = getSavedPageView(state.currentPage || 1);
-  if (!saved) {
-    updatePageNav();
-    return;
-  }
-  state.scale = clampExamScale(saved.scale);
-  state.fitWidth = saved.fitWidth ?? false;
-  state.manualZoom = saved.manualZoom ?? true;
-  const ws = getActiveWorkspace();
-  if (ws) {
-    ws.scale = state.scale;
-    ws.fitWidth = state.fitWidth;
-    ws.manualZoom = state.manualZoom;
-  }
-  await renderExam();
-  if (els.exam) {
-    els.exam.scrollLeft = saved.scrollLeft || 0;
-    els.exam.scrollTop = saved.scrollTop || 0;
-    clampExamScroll(els.exam);
-  }
-  updatePageNav();
+  await applyExamViewportForCurrentPage();
+  scheduleExamFitWidthRefit();
   if (els.searchInput) els.searchInput.value = state.searchQuery || "";
   renderSearchResults(els.searchResults, state.searchResults, state.searchIdx, jumpToSearchResult);
+}
+
+async function waitForExamLayout() {
+  updateExamHint();
+  let lastWidth = 0;
+  let stableCount = 0;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const width = getExamScrollClientWidth();
+    if (width <= 120) continue;
+    if (width === lastWidth) {
+      stableCount += 1;
+      if (stableCount >= 2) return;
+    } else {
+      stableCount = 0;
+    }
+    lastWidth = width;
+  }
+}
+
+let examViewportObserver = null;
+let examFitRefitTimer = null;
+
+function getExamScrollClientWidth() {
+  const scrollEl = els.exam;
+  if (scrollEl) {
+    const rect = scrollEl.getBoundingClientRect();
+    if (rect.width > 0) {
+      const style = window.getComputedStyle(scrollEl);
+      const paddingX =
+        (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+      return Math.max(200, rect.width - paddingX);
+    }
+    if (scrollEl.clientWidth > 0) return scrollEl.clientWidth;
+  }
+  const pane = els.paneExam;
+  if (pane) {
+    const rect = pane.getBoundingClientRect();
+    if (rect.width > 0) return Math.max(200, rect.width - 40);
+  }
+  return 500;
+}
+
+async function applyFitWidthViewport({ restoreScroll = false, pageNum = state.currentPage } = {}) {
+  if (!state.pdfDoc) return;
+
+  const ws = getActiveWorkspace();
+  state.fitWidth = true;
+  state.manualZoom = false;
+  if (ws) {
+    ws.fitWidth = true;
+    ws.manualZoom = false;
+  }
+
+  await waitForExamLayout();
+  await ensureFitWidthScale({ force: true });
+  await renderExam();
+
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  const scaleBeforeConfirm = state.scale;
+  await ensureFitWidthScale({ force: true });
+  if (Math.abs(state.scale - scaleBeforeConfirm) > 0.005) {
+    await renderExam();
+  }
+
+  if (els.exam) {
+    if (restoreScroll) {
+      const saved = getSavedPageView(pageNum || 1);
+      els.exam.scrollLeft = saved?.scrollLeft || 0;
+      els.exam.scrollTop = saved?.scrollTop || 0;
+      clampExamScroll(els.exam);
+    } else {
+      els.exam.scrollLeft = 0;
+      els.exam.scrollTop = 0;
+    }
+  }
+
+  updatePageNav();
+  saveCurrentPageView();
+}
+
+function scheduleExamFitWidthRefit() {
+  clearTimeout(examFitRefitTimer);
+  examFitRefitTimer = setTimeout(async () => {
+    if (!state.pdfDoc || state.manualZoom || !state.fitWidth) return;
+    const before = state.scale;
+    await waitForExamLayout();
+    await ensureFitWidthScale({ force: true });
+    if (Math.abs(state.scale - before) > 0.005) {
+      await renderExam();
+      updatePageNav();
+      saveCurrentPageView();
+    }
+  }, 120);
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(async () => {
+      if (!state.pdfDoc || state.manualZoom || !state.fitWidth) return;
+      const before = state.scale;
+      await ensureFitWidthScale({ force: true });
+      if (Math.abs(state.scale - before) > 0.005) {
+        await renderExam();
+        updatePageNav();
+        saveCurrentPageView();
+      }
+    });
+  });
+}
+
+function bindExamViewportObserver() {
+  if (!els.exam || examViewportObserver) return;
+
+  let lastWidth = 0;
+  examViewportObserver = new ResizeObserver((entries) => {
+    const entry = entries[0];
+    const width = entry?.contentRect?.width || 0;
+    if (width <= 120) return;
+    if (!state.pdfDoc || state.manualZoom || !state.fitWidth) return;
+    if (Math.abs(width - lastWidth) < 6) return;
+    lastWidth = width;
+    scheduleExamFitWidthRefit();
+  });
+  examViewportObserver.observe(els.exam);
+}
+
+async function applyExamViewportForCurrentPage() {
+  if (!state.pdfDoc) return;
+  await applyFitWidthViewport();
+  scheduleExamFitWidthRefit();
+}
+
+function resetExamViewportForFreshLoad() {
+  state.fitWidth = true;
+  state.manualZoom = false;
+  state.scale = 1;
+  const ws = getActiveWorkspace();
+  if (ws) {
+    ws.fitWidth = true;
+    ws.manualZoom = false;
+    ws.scale = 1;
+    ws.pageViews = {};
+  }
 }
 
 function getSessionStorageKey(userId = currentUserId) {
@@ -785,7 +923,9 @@ async function loadPdfSlotFromFingerprint(fingerprint, fileName, documentId, sou
   state.pdfSlots.push(slot);
   state.activeSlotIndex = state.pdfSlots.length - 1;
   pdfDocs[fingerprint] = pdfDoc;
-  ensureWorkspace(fingerprint);
+  const ws = ensureWorkspace(fingerprint);
+  resetExamViewportForFreshLoad();
+  ws.currentPage = 1;
   if (!slot.documentId && stored.buffer) {
     const doc = await attemptBridge.registerUploadedDocument(
       stored.buffer,
@@ -800,8 +940,8 @@ async function loadPdfSlotFromFingerprint(fingerprint, fileName, documentId, sou
   syncFromSlot();
   state.pageCount = pdfDoc.numPages;
   state.currentPage = 1;
-  await ensureFitWidthScale({ force: true });
-  await renderExamOrThrow();
+  await waitForExamLayout();
+  await applyExamViewportForCurrentPage();
   updateExamHint();
   updatePageNav();
   renderDocSelect();
@@ -913,10 +1053,11 @@ async function switchPdfSlot(fingerprint) {
   syncFromSlot();
   renderDocSelect();
 
+  searchRunToken += 1;
+  resetExamSearchInput();
+
   if (state.pdfDoc) {
-    await ensureFitWidthScale({ force: true });
-    await renderExamOrThrow();
-    updatePageNav();
+    await applyExamViewportForCurrentPage();
     refreshBookmarkPanel();
     if (els.searchInput) els.searchInput.value = state.searchQuery;
     renderSearchResults(els.searchResults, state.searchResults, state.searchIdx, jumpToSearchResult);
@@ -942,6 +1083,7 @@ async function deletePdfSlot(fingerprint) {
   state.pdfSlots.splice(idx, 1);
   delete state.workspaces[fingerprint];
   delete pdfDocs[fingerprint];
+  clearPageTextCache(fingerprint);
 
   try {
     await deletePdfFromDb(fingerprint);
@@ -958,8 +1100,7 @@ async function deletePdfSlot(fingerprint) {
   renderPdfManageList();
 
   if (state.pdfDoc) {
-    await ensureFitWidthScale({ force: true });
-    await renderExamOrThrow();
+    await applyExamViewportForCurrentPage();
     updatePageNav();
   }
 
@@ -993,6 +1134,7 @@ function applyViewMode(mode) {
   document.querySelectorAll(".ws-view-btn").forEach((btn) => {
     btn.classList.toggle("is-active", btn.dataset.view === mode);
   });
+  scheduleExamFitWidthRefit();
   scheduleSave();
 }
 
@@ -1000,7 +1142,7 @@ async function ensureFitWidthScale({ force = false } = {}) {
   if (!state.pdfDoc) return;
   if (state.manualZoom && !force) return;
   state.scale = clampExamScale(
-    await calcFitWidthScale(state.pdfDoc, state.currentPage, els.exam?.clientWidth || 500)
+    await calcFitWidthScale(state.pdfDoc, state.currentPage, getExamScrollClientWidth())
   );
   state.fitWidth = true;
   state.manualZoom = false;
@@ -1014,7 +1156,8 @@ async function ensureFitWidthScale({ force = false } = {}) {
 
 async function refitExamIfNeeded() {
   if (!state.pdfDoc) return;
-  if (state.manualZoom && !state.fitWidth) return;
+  if (state.manualZoom) return;
+  if (!state.fitWidth) return;
   await ensureFitWidthScale({ force: true });
   await renderExam();
   updatePageNav();
@@ -1079,7 +1222,7 @@ function setMobileTab(tab) {
 
 function updatePageNav() {
   if (els.pageLabel) els.pageLabel.textContent = `/ ${state.pageCount || "—"}`;
-  if (els.pageInput) els.pageInput.value = String(state.currentPage);
+  if (els.pageCurrent) els.pageCurrent.textContent = String(state.currentPage || 1);
   if (els.prevPage) els.prevPage.disabled = state.currentPage <= 1;
   if (els.nextPage) els.nextPage.disabled = !state.pageCount || state.currentPage >= state.pageCount;
   updateZoomLabel();
@@ -1273,59 +1416,61 @@ function bindDrawController() {
   updateDrawToolUi();
 }
 
+function getActivePageMatchIndex() {
+  if (!state.searchResults.length || !state.searchQuery) return -1;
+  const current = state.searchResults[state.searchIdx];
+  if (!current || current.pageNumber !== state.currentPage) return -1;
+  return state.searchResults
+    .slice(0, state.searchIdx + 1)
+    .filter((result) => result.pageNumber === state.currentPage).length - 1;
+}
+
+function scrollActiveSearchMarkIntoView() {
+  const activeMark = els.examPages?.querySelector("mark.exam-search-mark.is-active");
+  activeMark?.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+}
+
 async function renderExam() {
   if (!state.pdfDoc || !els.examPages) return;
   const token = ++renderToken;
   els.examPages.innerHTML = `<p style="text-align:center;color:#888;padding:40px">렌더링 중…</p>`;
+
+  const highlightQuery =
+    state.searchResults.length > 0 && !state.searchHighlightDismissed ? state.searchQuery : "";
+  const activePageMatchIndex = highlightQuery ? getActivePageMatchIndex() : -1;
 
   const { isTextRich } = await renderSinglePage(
     state.pdfDoc,
     state.currentPage,
     state.scale,
     els.examPages,
-    state.searchQuery
+    highlightQuery,
+    activePageMatchIndex
   );
   if (token !== renderToken) return;
 
-  if (state.isTextPdf === null) state.isTextPdf = isTextRich;
+  if (state.isTextPdf === null && isTextRich) {
+    state.isTextPdf = true;
+  }
   const ws = getActiveWorkspace();
-  if (ws && ws.isTextPdf === null) ws.isTextPdf = state.isTextPdf;
+  if (ws && ws.isTextPdf !== true && isTextRich) {
+    ws.isTextPdf = true;
+  }
 
   bindDrawController();
   if (els.examPages) {
     els.examPages.classList.toggle("is-fit-width", state.fitWidth && !state.manualZoom);
   }
-  updateSearchNotice();
-}
-
-function clearPageDrawAnnotations() {
-  const fp = state.pdfFingerprint;
-  const surface = activeDrawSurface || "exam";
-  const page = surface === "answer" ? state.answerSheetPage + 1 : state.currentPage;
-  const before = state.drawAnnotations.filter(
-    (a) => a.pdfFingerprint === fp && a.pageNumber === page && getAnnotationSurface(a) === surface
-  ).length;
-  if (!before) {
-    showToast("삭제할 주석이 없습니다.");
-    return;
+  if (highlightQuery && activePageMatchIndex >= 0) {
+    scrollActiveSearchMarkIntoView();
   }
-  const surfaceLabel = surface === "answer" ? "답안지" : "시험지";
-  if (!window.confirm(`현재 ${surfaceLabel} 페이지의 모든 주석을 삭제하시겠습니까?`)) return;
-  state.drawAnnotations = state.drawAnnotations.filter(
-    (a) => !(a.pdfFingerprint === fp && a.pageNumber === page && getAnnotationSurface(a) === surface)
-  );
-  const ws = getActiveWorkspace();
-  if (ws) ws.drawAnnotations = state.drawAnnotations;
-  refreshAllDrawLayers();
-  scheduleSave();
-  showToast("현재 페이지 주석을 삭제했습니다.");
+  updateSearchNotice();
 }
 
 function updateSearchNotice() {
   if (!els.searchNotice) return;
   if (state.isTextPdf === false) {
-    els.searchNotice.textContent =
-      "이 PDF는 이미지 기반이므로 텍스트 검색을 지원하지 않습니다. 밑줄·형광펜 도구로 자유롭게 표시하세요.";
+    els.searchNotice.textContent = "텍스트가 포함되지 않은 스캔 PDF는 검색할 수 없습니다.";
   } else if (state.isTextPdf) {
     els.searchNotice.textContent = "텍스트 검색이 가능합니다. 밑줄·형광펜 도구로 시험지에 표시할 수 있습니다.";
   } else {
@@ -1693,7 +1838,6 @@ function initFloatingTimerWidget() {
 
   floatingTimer = createFloatingTimer({
     rootEl: root,
-    dragHandleEl: document.getElementById("ws-floating-timer-drag"),
     displayEl: document.getElementById("ws-float-timer-display"),
     startBtn: document.getElementById("ws-float-timer-start"),
     presetButtons: [...root.querySelectorAll("[data-timer-minutes]")],
@@ -1702,12 +1846,7 @@ function initFloatingTimerWidget() {
       timerRunning: state.timerRunning,
       timerDurationSeconds: state.timerDurationSeconds,
       timerRemainingSeconds: state.timerRemainingSeconds,
-      timerPos: state.timerPos,
     }),
-    setState: (patch) => {
-      if (patch.timerPos) state.timerPos = patch.timerPos;
-    },
-    onSave: () => scheduleSave(),
   });
 }
 
@@ -1919,14 +2058,14 @@ async function handlePdfUploadCore(file) {
   state.activeSlotIndex = state.pdfSlots.length - 1;
 
   pdfDocs[fp] = pdfDoc;
+  clearPageTextCache(fp);
   const ws = ensureWorkspace(fp);
+  resetExamViewportForFreshLoad();
   const doc = await attemptBridge.registerUploadedDocument(storageBuffer, file, pdfDoc.numPages, fp);
   slot.documentId = doc.id;
   slot.sourceType = doc.sourceType;
   slot.year = doc.year ?? null;
   ws.currentPage = 1;
-  ws.scale = 1;
-  ws.pageViews = {};
   ws.isTextPdf = null;
   ws.pageTexts = null;
   ws.searchQuery = "";
@@ -1942,11 +2081,8 @@ async function handlePdfUploadCore(file) {
   try {
     state.isTextPdf = await detectPdfTextRich(state.pdfDoc);
     ws.isTextPdf = state.isTextPdf;
-    if (state.isTextPdf) {
-      state.pageTexts = await buildPageTexts(state.pdfDoc);
-      ws.pageTexts = state.pageTexts;
-    }
-    await ensureFitWidthScale({ force: true });
+    await waitForExamLayout();
+    await applyExamViewportForCurrentPage();
     await renderExamOrThrow();
   } catch (err) {
     showStatus(err.message || "PDF 렌더링 실패", "error");
@@ -1977,36 +2113,7 @@ async function goToPage(pageNum) {
   const ws = getActiveWorkspace();
   if (ws) ws.currentPage = p;
 
-  const saved = getSavedPageView(p);
-  if (saved) {
-    state.scale = clampExamScale(saved.scale);
-    state.fitWidth = saved.fitWidth ?? false;
-    state.manualZoom = saved.manualZoom ?? true;
-    if (ws) {
-      ws.scale = state.scale;
-      ws.fitWidth = state.fitWidth;
-      ws.manualZoom = state.manualZoom;
-    }
-    await renderExam();
-    if (els.exam) {
-      els.exam.scrollLeft = saved.scrollLeft || 0;
-      els.exam.scrollTop = saved.scrollTop || 0;
-      clampExamScroll(els.exam);
-    }
-  } else {
-    state.fitWidth = true;
-    state.manualZoom = false;
-    if (ws) {
-      ws.fitWidth = true;
-      ws.manualZoom = false;
-    }
-    await ensureFitWidthScale({ force: true });
-    await renderExam();
-    if (els.exam) {
-      els.exam.scrollLeft = 0;
-      els.exam.scrollTop = 0;
-    }
-  }
+  await applyFitWidthViewport({ pageNum: p });
   updatePageNav();
   refreshBookmarkPanel();
   scheduleSave();
@@ -2020,44 +2127,193 @@ async function navNext() {
   if (state.currentPage < state.pageCount) await goToPage(state.currentPage + 1);
 }
 
-function runSearch(query) {
-  state.searchQuery = String(query || "").trim();
+function updateExamSearchStatus() {
+  if (!els.examSearchStatus) return;
+  const total = state.searchResults.length;
+  if (!state.searchQuery || total === 0) {
+    els.examSearchStatus.textContent = "0 / 0";
+    return;
+  }
+  els.examSearchStatus.textContent = `${state.searchIdx + 1} / ${total}`;
+}
+
+function showExamSearchNotice(message = "") {
+  if (!els.examSearchNotice) return;
+  if (!message) {
+    els.examSearchNotice.hidden = true;
+    els.examSearchNotice.textContent = "";
+    return;
+  }
+  els.examSearchNotice.hidden = false;
+  els.examSearchNotice.textContent = message;
+}
+
+function removeSearchMarksFromExam() {
+  els.examPages?.querySelectorAll("mark.exam-search-mark").forEach((mark) => {
+    mark.replaceWith(document.createTextNode(mark.textContent || ""));
+  });
+}
+
+function dismissSearchHighlight() {
+  if (!state.searchResults.length || state.searchHighlightDismissed) return;
+  state.searchHighlightDismissed = true;
+  removeSearchMarksFromExam();
+}
+
+function restoreSearchHighlight() {
+  state.searchHighlightDismissed = false;
+}
+
+function clearExamSearchResults({ rerender = true, clearQuery = false } = {}) {
+  if (clearQuery) {
+    state.searchQuery = "";
+    const ws = getActiveWorkspace();
+    if (ws) ws.searchQuery = "";
+  }
+  state.searchResults = [];
+  state.searchIdx = 0;
+  restoreSearchHighlight();
+  const ws = getActiveWorkspace();
+  if (ws) {
+    ws.searchResults = [];
+    ws.searchIdx = 0;
+  }
+  updateExamSearchStatus();
+  showExamSearchNotice("");
+  renderSearchResults(els.searchResults, [], 0, () => {});
+  if (rerender && state.pdfDoc) renderExam();
+}
+
+function resetExamSearchInput() {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+  if (els.examSearchInput) els.examSearchInput.value = "";
+  if (els.searchInput) els.searchInput.value = "";
+  state.searchQuery = "";
+  const ws = getActiveWorkspace();
+  if (ws) ws.searchQuery = "";
+  clearExamSearchResults();
+}
+
+function scheduleSearch(query, { source = "toolbar", immediate = false } = {}) {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+
+  const trimmed = String(query ?? "").trim();
+  if (!trimmed) {
+    searchRunToken += 1;
+    resetExamSearchInput();
+    return;
+  }
+
+  if (source === "toolbar" && els.searchInput && els.searchInput.value !== query) {
+    els.searchInput.value = query;
+  }
+  if (source === "sidebar" && els.examSearchInput && els.examSearchInput.value !== query) {
+    els.examSearchInput.value = query;
+  }
+
+  searchRunToken += 1;
+
+  if (immediate) {
+    runSearch(query, { source });
+    return;
+  }
+
+  searchDebounceTimer = setTimeout(() => {
+    searchDebounceTimer = null;
+    runSearch(query, { source });
+  }, SEARCH_DEBOUNCE_MS);
+}
+
+async function runSearch(query, { source = "toolbar" } = {}) {
+  const token = ++searchRunToken;
+  state.searchQuery = String(query ?? "").trim();
   const ws = getActiveWorkspace();
   if (ws) ws.searchQuery = state.searchQuery;
 
+  if (source === "toolbar" && els.examSearchInput && els.examSearchInput.value !== state.searchQuery) {
+    els.examSearchInput.value = state.searchQuery;
+  }
+  if (source === "sidebar" && els.searchInput && els.searchInput.value !== state.searchQuery) {
+    els.searchInput.value = state.searchQuery;
+  }
+
   if (!state.searchQuery) {
-    state.searchResults = [];
-    state.searchIdx = 0;
-    if (ws) {
-      ws.searchResults = [];
-      ws.searchIdx = 0;
-    }
-    renderSearchResults(els.searchResults, [], 0, () => {});
-    renderExam();
+    clearExamSearchResults();
     return;
   }
-  if (!state.isTextPdf || !state.pageTexts) {
-    showStatus("이 PDF는 텍스트 검색을 지원하지 않습니다.", "error");
+
+  if (!state.pdfDoc) return;
+
+  showExamSearchNotice("검색 준비 중…");
+
+  if (state.isTextPdf !== true) {
+    state.isTextPdf = await detectPdfTextRich(state.pdfDoc);
+    if (ws) ws.isTextPdf = state.isTextPdf;
+    if (token !== searchRunToken) return;
+  }
+
+  if (state.isTextPdf === false) {
+    clearExamSearchResults({ rerender: false });
+    showExamSearchNotice("텍스트가 포함되지 않은 스캔 PDF는 검색할 수 없습니다.");
+    showStatus("텍스트가 포함되지 않은 스캔 PDF는 검색할 수 없습니다.", "warning");
     return;
   }
-  state.searchResults = searchInPages(state.pageTexts, state.searchQuery);
+
+  const cache = getPageTextCache(state.pdfFingerprint);
+  const totalPages = state.pageCount || state.pdfDoc.numPages || 0;
+  const { results, cancelled } = await searchPdfDocument(state.pdfDoc, state.searchQuery, {
+    cache,
+    onProgress: (current, total) => {
+      if (token !== searchRunToken) return;
+      showExamSearchNotice(`검색 준비 중 ${current} / ${total}페이지`);
+    },
+    isCancelled: () => token !== searchRunToken,
+  });
+
+  if (token !== searchRunToken || cancelled) return;
+
+  state.searchResults = results;
   state.searchIdx = 0;
+  restoreSearchHighlight();
   if (ws) {
-    ws.searchResults = state.searchResults;
+    ws.searchResults = results;
     ws.searchIdx = 0;
   }
+
   renderSearchResults(els.searchResults, state.searchResults, state.searchIdx, jumpToSearchResult);
-  if (state.searchResults.length) jumpToSearchResult(0);
-  else showStatus("검색 결과 없음", "info");
+  updateExamSearchStatus();
+
+  if (!results.length) {
+    showExamSearchNotice("검색 결과가 없습니다.");
+    showStatus("검색 결과가 없습니다.", "info");
+    await renderExam();
+    return;
+  }
+
+  showExamSearchNotice("");
+  jumpToSearchResult(0);
 }
 
 function jumpToSearchResult(idx) {
   if (!state.searchResults.length) return;
+  restoreSearchHighlight();
   state.searchIdx = ((idx % state.searchResults.length) + state.searchResults.length) % state.searchResults.length;
   const ws = getActiveWorkspace();
   if (ws) ws.searchIdx = state.searchIdx;
-  goToPage(state.searchResults[state.searchIdx].pageNumber);
+  updateExamSearchStatus();
   renderSearchResults(els.searchResults, state.searchResults, state.searchIdx, jumpToSearchResult);
+  const targetPage = state.searchResults[state.searchIdx].pageNumber;
+  if (targetPage === state.currentPage) {
+    renderExam();
+    return;
+  }
+  goToPage(targetPage);
 }
 
 function refreshBookmarkPanel() {
@@ -2284,22 +2540,12 @@ async function restoreSession() {
       if (state.isTextPdf === null) {
         state.isTextPdf = await detectPdfTextRich(state.pdfDoc);
         const ws = getActiveWorkspace();
-        if (ws) {
-          ws.isTextPdf = state.isTextPdf;
-          if (state.isTextPdf && !ws.pageTexts) {
-            ws.pageTexts = await buildPageTexts(state.pdfDoc);
-            state.pageTexts = ws.pageTexts;
-          }
-        }
+        if (ws) ws.isTextPdf = state.isTextPdf;
       }
-      if (state.manualZoom && !state.fitWidth) {
-        await renderExamOrThrow();
-      } else {
-        await ensureFitWidthScale({ force: true });
-        await renderExamOrThrow();
-      }
-      updatePageNav();
-      if (els.searchInput) els.searchInput.value = state.searchQuery;
+      await applyExamViewportForCurrentPage();
+      if (els.searchInput) els.searchInput.value = state.searchQuery || "";
+      if (els.examSearchInput) els.examSearchInput.value = state.searchQuery || "";
+      updateExamSearchStatus();
       renderSearchResults(els.searchResults, state.searchResults, state.searchIdx, jumpToSearchResult);
     }
 
@@ -2429,7 +2675,6 @@ function bindEvents() {
 
   els.prevPage?.addEventListener("click", navPrev);
   els.nextPage?.addEventListener("click", navNext);
-  els.pageInput?.addEventListener("change", () => goToPage(els.pageInput.value));
 
   document.getElementById("ws-zoom-in")?.addEventListener("click", async () => {
     await applyExamScale(state.scale + BUTTON_ZOOM_STEP, { manualZoom: true, fitWidth: false });
@@ -2438,16 +2683,7 @@ function bindEvents() {
     await applyExamScale(state.scale - BUTTON_ZOOM_STEP, { manualZoom: true, fitWidth: false });
   });
   document.getElementById("ws-fit-width")?.addEventListener("click", async () => {
-    state.fitWidth = true;
-    state.manualZoom = false;
-    await ensureFitWidthScale({ force: true });
-    await renderExam();
-    if (els.exam) {
-      els.exam.scrollLeft = 0;
-      els.exam.scrollTop = 0;
-    }
-    saveCurrentPageView();
-    updatePageNav();
+    await applyFitWidthViewport();
     scheduleSave();
   });
 
@@ -2470,7 +2706,6 @@ function bindEvents() {
     scheduleSave();
   });
   document.getElementById("ws-annot-undo")?.addEventListener("click", () => undoLastDrawAnnotation());
-  document.getElementById("ws-annot-clear-page")?.addEventListener("click", () => clearPageDrawAnnotations());
 
   document.getElementById("ws-exam-line-color")?.addEventListener("change", (e) => {
     state.lineColor = e.target.value;
@@ -2484,7 +2719,37 @@ function bindEvents() {
     btn.addEventListener("click", () => applyViewMode(btn.dataset.view));
   });
 
-  els.searchInput?.addEventListener("input", (e) => runSearch(e.target.value));
+  els.examSearchInput?.addEventListener("input", (e) => {
+    scheduleSearch(e.target.value, { source: "toolbar" });
+  });
+  els.examSearchInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      scheduleSearch(e.target.value, { source: "toolbar", immediate: true });
+    }
+  });
+  els.examSearchPrev?.addEventListener("click", () => {
+    if (state.searchResults.length) jumpToSearchResult(state.searchIdx - 1);
+  });
+  els.examSearchNext?.addEventListener("click", () => {
+    if (state.searchResults.length) jumpToSearchResult(state.searchIdx + 1);
+  });
+
+  els.exam?.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    if (!e.target.closest("#ws-exam-pages")) return;
+    dismissSearchHighlight();
+  });
+
+  els.searchInput?.addEventListener("input", (e) => {
+    scheduleSearch(e.target.value, { source: "sidebar" });
+  });
+  els.searchInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      scheduleSearch(e.target.value, { source: "sidebar", immediate: true });
+    }
+  });
   document.getElementById("ws-search-prev")?.addEventListener("click", () => {
     if (state.searchResults.length) jumpToSearchResult(state.searchIdx - 1);
   });
@@ -2561,11 +2826,6 @@ function bindEvents() {
 
   document.querySelectorAll(".ws-tab-btn").forEach((btn) => {
     btn.addEventListener("click", () => setMobileTab(btn.dataset.tab));
-  });
-
-  els.previewBtn?.addEventListener("click", () => {
-    syncAnswerPageToState();
-    previewController?.open();
   });
 
   document.getElementById("ws-save-library-btn")?.addEventListener("click", () => openSaveToLibraryModal());
@@ -2707,6 +2967,9 @@ function resetWorkspaceMemoryState() {
     delete pdfDocs[key];
   });
 
+  clearAllPageTextCaches();
+  searchRunToken += 1;
+
   currentUserId = null;
   currentExamAttempt = null;
 
@@ -2767,6 +3030,7 @@ export async function prepareWorkspaceForAuthenticatedUser() {
   updateTimerDisplay();
   floatingTimer?.refreshDisplay();
   applyAnswerTypography(getAnswerTypography(), { save: false });
+  scheduleExamFitWidthRefit();
 }
 
 export async function initWorkspace() {
@@ -2774,6 +3038,7 @@ export async function initWorkspace() {
 
   if (!workspaceDomBound) {
     bindVerticalResizer();
+    bindExamViewportObserver();
     initPreviewModal();
     bindEvents();
     bindTimerControls();
