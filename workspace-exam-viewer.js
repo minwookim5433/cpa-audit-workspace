@@ -3,7 +3,7 @@
  */
 import * as pdfjsLib from "/node_modules/pdfjs-dist/build/pdf.mjs";
 import { assessTextContent } from "./study-problem-range.js";
-import { normalizePdfSearchText } from "./workspace-search.js";
+import { normalizePdfSearchText } from "./workspace-pdf-text.js";
 
 export const MOBILE_BREAKPOINT = 900;
 
@@ -45,7 +45,7 @@ async function renderOnePage(pdfDoc, pageNum, scale, highlightQuery, activePageM
 
   await page.render({ canvasContext: ctx, viewport }).promise;
 
-  const textContent = await page.getTextContent();
+  const textContent = await page.getTextContent({ disableNormalization: true });
   const textAssess = assessTextContent(textContent);
 
   const textLayerDiv = document.createElement("div");
@@ -103,7 +103,7 @@ function highlightTextLayer(layer, query, activePageMatchIndex = -1) {
       const ch = text[offsetInSpan];
       if (/\s/.test(ch)) continue;
       charMap.push({ spanIndex, offsetInSpan });
-      normalizedFull += ch.normalize("NFC").toLowerCase();
+      normalizedFull += ch.normalize("NFKC").toLowerCase();
     }
   });
 
@@ -201,7 +201,7 @@ export async function detectPdfTextRich(pdfDoc, { samplePages = 3, includePages 
 
   for (const pageNum of pagesToCheck) {
     const page = await pdfDoc.getPage(pageNum);
-    const tc = await page.getTextContent();
+    const tc = await page.getTextContent({ disableNormalization: true });
     if (assessTextContent(tc).isTextRich) return true;
   }
   return false;
@@ -209,7 +209,7 @@ export async function detectPdfTextRich(pdfDoc, { samplePages = 3, includePages 
 
 export async function isPageTextRich(pdfDoc, pageNum) {
   const page = await pdfDoc.getPage(pageNum);
-  const tc = await page.getTextContent();
+  const tc = await page.getTextContent({ disableNormalization: true });
   return assessTextContent(tc).isTextRich;
 }
 

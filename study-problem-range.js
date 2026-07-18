@@ -1,24 +1,10 @@
 /**
  * PDF text-layer helpers — text richness check + page text extraction
  */
-
-function textFromContent(textContent) {
-  return (textContent?.items || [])
-    .map((item) => String(item?.str ?? ""))
-    .join("")
-    .replace(/\u00a0/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+import { assessTextContent as assessPdfTextContent } from "./workspace-pdf-text.js";
 
 export function assessTextContent(textContent) {
-  const items = textContent?.items || [];
-  const text = textFromContent(textContent);
-  const charCount = text.length;
-  const itemCount = items.length;
-  const isTextRich = itemCount >= 8 && charCount >= 40;
-
-  return { isTextRich, charCount, itemCount, text };
+  return assessPdfTextContent(textContent);
 }
 
 export async function extractAllPageTexts(pdfDoc) {
@@ -27,10 +13,11 @@ export async function extractAllPageTexts(pdfDoc) {
   const pages = [];
   for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber += 1) {
     const page = await pdfDoc.getPage(pageNumber);
-    const textContent = await page.getTextContent();
+    const textContent = await page.getTextContent({ disableNormalization: true });
+    const assess = assessTextContent(textContent);
     pages.push({
       pageNumber,
-      text: textFromContent(textContent),
+      text: assess.text,
     });
   }
   return pages;

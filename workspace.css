@@ -435,10 +435,18 @@ body {
   white-space: nowrap;
 }
 
+.ws-exam-search-bar[hidden] {
+  display: none !important;
+}
+
 .ws-exam-search-notice {
-  flex: 1 1 100%;
+  flex: 0 1 auto;
+  max-width: min(320px, 42vw);
   font-size: 0.72rem;
-  color: var(--ws-muted);
+  color: #9a6700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ws-exam-search-notice[hidden] {

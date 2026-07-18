@@ -1,51 +1,15 @@
 /**
  * 시험지 텍스트 검색 — lazy textContent + 캐시
  */
-import { assessTextContent } from "./study-problem-range.js";
+import {
+  assessTextContent,
+  findNormalizedMatchesInTexts,
+  normalizePdfSearchText,
+} from "./workspace-pdf-text.js";
+
+export { normalizePdfSearchText };
 
 const pageTextCaches = new Map();
-
-function textFromContent(textContent) {
-  return (textContent?.items || [])
-    .map((item) => String(item?.str ?? ""))
-    .join("")
-    .replace(/\u00a0/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/** PDF 텍스트 레이어 검색용 — 글자 사이 불필요 공백 제거 */
-export function normalizePdfSearchText(text) {
-  return String(text ?? "")
-    .normalize("NFC")
-    .replace(/[\u200B-\u200D\uFEFF]/g, "")
-    .replace(/\s+/g, "");
-}
-
-function normalizePdfSearchQuery(query) {
-  return normalizePdfSearchText(String(query || "").trim()).toLowerCase();
-}
-
-function findNormalizedMatches(text, query) {
-  const normalizedText = normalizePdfSearchText(text).toLowerCase();
-  const normalizedQuery = normalizePdfSearchQuery(query);
-  if (!normalizedQuery) return [];
-
-  const matches = [];
-  let idx = 0;
-  while (idx < normalizedText.length) {
-    const found = normalizedText.indexOf(normalizedQuery, idx);
-    if (found === -1) break;
-    const snippetStart = Math.max(0, found - 20);
-    const snippetEnd = Math.min(normalizedText.length, found + normalizedQuery.length + 20);
-    matches.push({
-      index: found,
-      snippet: normalizedText.slice(snippetStart, snippetEnd),
-    });
-    idx = found + normalizedQuery.length;
-  }
-  return matches;
-}
 
 export function getPageTextCache(fingerprint) {
   if (!fingerprint) return new Map();
@@ -61,14 +25,59 @@ export function clearAllPageTextCaches() {
   pageTextCaches.clear();
 }
 
+async function readPageTextContent(page) {
+  const variants = [];
+  const seen = new Set();
+
+  for (const disableNormalization of [true, false]) {
+    try {
+      const textContent = await page.getTextContent({ disableNormalization });
+      const key = JSON.stringify((textContent?.items || []).map((item) => item?.str ?? ""));
+      if (seen.has(key)) continue;
+      seen.add(key);
+      variants.push(textContent);
+    } catch {
+      /* try next mode */
+    }
+  }
+
+  if (!variants.length) {
+    return page.getTextContent();
+  }
+  return variants;
+}
+
+function mergePageTextAssessment(textContents) {
+  const lists = Array.isArray(textContents) ? textContents : [textContents];
+  const allVariants = new Set();
+  let isTextRich = false;
+  let charCount = 0;
+  let itemCount = 0;
+  let primaryText = "";
+
+  for (const textContent of lists) {
+    const assess = assessTextContent(textContent);
+    itemCount = Math.max(itemCount, assess.itemCount);
+    charCount = Math.max(charCount, assess.charCount);
+    isTextRich = isTextRich || assess.isTextRich;
+    for (const variant of assess.variants || []) {
+      if (variant) allVariants.add(variant);
+    }
+    if (!primaryText && assess.text) primaryText = assess.text;
+  }
+
+  const textVariants = [...allVariants];
+  return {
+    text: primaryText || textVariants[0] || "",
+    textVariants: textVariants.length ? textVariants : [primaryText].filter(Boolean),
+    isTextRich,
+  };
+}
+
 export async function extractPageText(pdfDoc, pageNumber) {
   const page = await pdfDoc.getPage(pageNumber);
-  const textContent = await page.getTextContent();
-  const assess = assessTextContent(textContent);
-  return {
-    text: assess.text,
-    isTextRich: assess.isTextRich,
-  };
+  const textContents = await readPageTextContent(page);
+  return mergePageTextAssessment(textContents);
 }
 
 /** @deprecated lazy search + cache 사용 권장 */
@@ -88,8 +97,9 @@ export function searchInPages(pageTexts, query) {
 
   const results = [];
 
-  for (const { pageNumber, text } of pageTexts || []) {
-    for (const match of findNormalizedMatches(text, q)) {
+  for (const { pageNumber, text, textVariants } of pageTexts || []) {
+    const texts = textVariants?.length ? textVariants : [text];
+    for (const match of findNormalizedMatchesInTexts(texts, q)) {
       results.push({
         pageNumber,
         index: match.index,
@@ -129,19 +139,25 @@ export async function searchPdfDocument(pdfDoc, query, options = {}) {
 
     onProgress?.(pageNumber, totalPages);
 
-    let text = cache.get(pageNumber);
-    if (text === undefined) {
+    let cached = cache.get(pageNumber);
+    if (typeof cached === "string") {
+      cached = { text: cached, textVariants: [cached] };
+      cache.set(pageNumber, cached);
+    }
+    if (!cached) {
       const extracted = await extractPageText(pdfDoc, pageNumber);
-      text = extracted.text;
-      cache.set(pageNumber, text);
-      if (extracted.isTextRich || String(text || "").length > 0) {
-        hadExtractableText = true;
-      }
-    } else if (String(text || "").length > 0) {
+      cached = {
+        text: extracted.text,
+        textVariants: extracted.textVariants || [extracted.text],
+      };
+      cache.set(pageNumber, cached);
+    }
+
+    if (extractedHasText(cached)) {
       hadExtractableText = true;
     }
 
-    for (const match of findNormalizedMatches(text, q)) {
+    for (const match of findNormalizedMatchesInTexts(cached.textVariants, q)) {
       results.push({
         pageNumber,
         index: match.index,
@@ -155,6 +171,11 @@ export async function searchPdfDocument(pdfDoc, query, options = {}) {
   }
 
   return { results, scannedPages: totalPages, cancelled: false, hadExtractableText };
+}
+
+function extractedHasText(cached) {
+  if (!cached) return false;
+  return (cached.textVariants || [cached.text]).some((text) => String(text || "").trim().length > 0);
 }
 
 export function renderSearchResults(container, results, currentIdx, onJump) {

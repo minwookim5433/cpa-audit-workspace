@@ -127,6 +127,7 @@ let renderToken = 0;
 let searchRunToken = 0;
 let searchDebounceTimer = null;
 const SEARCH_DEBOUNCE_MS = 350;
+const EXAM_SEARCH_UNSUPPORTED_MSG = "이 시험지는 텍스트 검색을 지원하지 않습니다.";
 let timerInterval = null;
 let saveDebounce = null;
 let previewController = null;
@@ -173,6 +174,7 @@ function cacheElements() {
     searchResults: "ws-search-results",
     searchNotice: "ws-search-notice",
     examSearchInput: "ws-exam-search-input",
+    examSearchBar: "ws-exam-search-bar",
     examSearchPrev: "ws-exam-search-prev",
     examSearchNext: "ws-exam-search-next",
     examSearchStatus: "ws-exam-search-status",
@@ -1462,18 +1464,49 @@ async function renderExam() {
   if (highlightQuery && activePageMatchIndex >= 0) {
     scrollActiveSearchMarkIntoView();
   }
-  updateSearchNotice();
+  updateExamSearchAvailability();
 }
 
-function updateSearchNotice() {
-  if (!els.searchNotice) return;
-  if (state.isTextPdf === false) {
-    els.searchNotice.textContent = "텍스트가 포함되지 않은 스캔 PDF는 검색할 수 없습니다.";
-  } else if (state.isTextPdf) {
-    els.searchNotice.textContent = "텍스트 검색이 가능합니다. 밑줄·형광펜 도구로 시험지에 표시할 수 있습니다.";
-  } else {
-    els.searchNotice.textContent = "시험지를 추가하면 검색·주석 가능 여부가 표시됩니다.";
+function updateExamSearchAvailability() {
+  const unsupported = state.isTextPdf === false;
+  const supported = state.isTextPdf === true;
+  const sidebarSearch = document.querySelector(".ws-sidebar-search");
+
+  if (els.examSearchBar) els.examSearchBar.hidden = unsupported;
+  if (sidebarSearch) sidebarSearch.hidden = unsupported;
+
+  [els.examSearchInput, els.searchInput].forEach((input) => {
+    if (!input) return;
+    input.disabled = unsupported;
+  });
+  [els.examSearchPrev, els.examSearchNext].forEach((btn) => {
+    if (!btn) return;
+    btn.disabled = unsupported;
+  });
+  document.getElementById("ws-search-prev")?.toggleAttribute("disabled", unsupported);
+  document.getElementById("ws-search-next")?.toggleAttribute("disabled", unsupported);
+
+  if (unsupported) {
+    showExamSearchNotice(EXAM_SEARCH_UNSUPPORTED_MSG);
+  } else if (supported) {
+    showExamSearchNotice("");
   }
+
+  if (els.searchNotice) {
+    if (unsupported) {
+      els.searchNotice.textContent = EXAM_SEARCH_UNSUPPORTED_MSG;
+    } else if (supported) {
+      els.searchNotice.textContent =
+        "텍스트 검색이 가능합니다. 밑줄·형광펜 도구로 시험지에 표시할 수 있습니다.";
+    } else {
+      els.searchNotice.textContent = "시험지를 추가하면 검색·주석 가능 여부가 표시됩니다.";
+    }
+  }
+}
+
+/** @deprecated use updateExamSearchAvailability */
+function updateSearchNotice() {
+  updateExamSearchAvailability();
 }
 
 function updateDrawToolUi() {
@@ -2079,6 +2112,7 @@ async function handlePdfUploadCore(file) {
   try {
     state.isTextPdf = await detectPdfTextRich(state.pdfDoc, { includePages: [state.currentPage] });
     ws.isTextPdf = state.isTextPdf;
+    updateExamSearchAvailability();
     await waitForExamLayout();
     await applyExamViewportForCurrentPage();
     await renderExamOrThrow();
@@ -2195,11 +2229,22 @@ function resetExamSearchInput() {
   clearExamSearchResults();
 }
 
+function markExamSearchUnsupported() {
+  state.isTextPdf = false;
+  const ws = getActiveWorkspace();
+  if (ws) ws.isTextPdf = false;
+  searchRunToken += 1;
+  resetExamSearchInput();
+  updateExamSearchAvailability();
+}
+
 function scheduleSearch(query, { source = "toolbar", immediate = false } = {}) {
   if (searchDebounceTimer) {
     clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;
   }
+
+  if (state.isTextPdf === false) return;
 
   const trimmed = String(query ?? "").trim();
   if (!trimmed) {
@@ -2248,6 +2293,11 @@ async function runSearch(query, { source = "toolbar" } = {}) {
 
   if (!state.pdfDoc) return;
 
+  if (state.isTextPdf === false) {
+    updateExamSearchAvailability();
+    return;
+  }
+
   showExamSearchNotice("검색 준비 중…");
 
   try {
@@ -2270,18 +2320,13 @@ async function runSearch(query, { source = "toolbar" } = {}) {
     if (token !== searchRunToken || cancelled) return;
 
     if (!hadExtractableText) {
-      state.isTextPdf = false;
-      if (ws) ws.isTextPdf = false;
-      clearExamSearchResults({ rerender: false });
-      showExamSearchNotice("텍스트가 포함되지 않은 스캔 PDF는 검색할 수 없습니다.");
-      showStatus("텍스트가 포함되지 않은 스캔 PDF는 검색할 수 없습니다.", "warning");
-      updateSearchNotice();
+      markExamSearchUnsupported();
       return;
     }
 
     state.isTextPdf = true;
     if (ws) ws.isTextPdf = true;
-    updateSearchNotice();
+    updateExamSearchAvailability();
 
     state.searchResults = results;
     state.searchIdx = 0;
