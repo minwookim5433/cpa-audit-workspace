@@ -8,7 +8,16 @@
   <link rel="stylesheet" href="workspace.css">
 </head>
 <body>
-  <div id="app-root" class="app-root app-mvp">
+  <div id="auth-gate" class="auth-gate">
+    <div class="auth-gate-card">
+      <h1 class="auth-gate-title">CPA Audit Workspace</h1>
+      <p class="auth-gate-desc">회계감사 사례형 문제를 실제 답안지 형식으로 작성하고 관리할 수 있는 웹 기반 Workspace</p>
+      <p id="auth-gate-error" class="auth-gate-error" hidden role="alert"></p>
+      <button type="button" id="auth-google-btn" class="ws-btn ws-btn-primary auth-google-btn">Google로 계속하기</button>
+    </div>
+  </div>
+
+  <div id="app-root" class="app-root app-mvp" hidden>
     <nav class="app-main-nav mvp-hidden" aria-label="메인 메뉴" hidden>
       <span class="app-brand">회계감사 Workspace</span>
       <button type="button" class="app-main-nav-btn is-active" data-main-view="library">📚 Problem Library</button>
@@ -101,6 +110,12 @@
       <button type="button" id="ws-preview-btn" class="ws-btn">답안지 미리보기</button>
       <button type="button" id="ws-save-pause-btn" class="ws-btn" title="답안·주석·페이지 위치를 저장하고 나중에 이어서 풀기">저장하고 나가기</button>
       <span id="ws-save-status" class="ws-save-status">저장됨</span>
+      <div class="ws-toolbar-spacer"></div>
+      <div id="ws-auth-user" class="ws-auth-user" hidden>
+        <img id="ws-auth-avatar" class="ws-auth-avatar" alt="" width="24" height="24" hidden />
+        <span id="ws-auth-label" class="ws-auth-label"></span>
+        <button type="button" id="ws-auth-logout" class="ws-btn ws-auth-logout-btn">로그아웃</button>
+      </div>
       <span id="ws-status" class="ws-status" aria-live="polite"></span>
     </header>
 

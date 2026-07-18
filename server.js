@@ -45,6 +45,21 @@ app.use(express.json({ limit: "5mb" }));
 const APP_BUILD_ID = process.env.RENDER_GIT_COMMIT || process.env.APP_BUILD_ID || "dev-local";
 const staticRoot = path.join(__dirname);
 
+function readSupabasePublicConfig() {
+  const supabaseUrl = process.env.SUPABASE_URL?.trim();
+  const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY?.trim();
+  const isPlaceholder = (value) =>
+    !value ||
+    /^TODO_/i.test(value) ||
+    /your-project-ref|your-supabase-publishable-key/i.test(value);
+
+  if (isPlaceholder(supabaseUrl) || isPlaceholder(supabasePublishableKey)) {
+    return null;
+  }
+
+  return { supabaseUrl, supabasePublishableKey };
+}
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
@@ -54,6 +69,20 @@ app.get("/version", (_req, res) => {
     status: "ok",
     commit: APP_BUILD_ID,
     features: { pdfAnswerGridLines: true },
+  });
+});
+
+app.get("/api/public-config", (_req, res) => {
+  const config = readSupabasePublicConfig();
+  if (!config) {
+    return res.status(503).json({
+      error: "Supabase environment variables are not configured.",
+    });
+  }
+
+  res.json({
+    supabaseUrl: config.supabaseUrl,
+    supabasePublishableKey: config.supabasePublishableKey,
   });
 });
 
