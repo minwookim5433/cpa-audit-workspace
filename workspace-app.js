@@ -73,8 +73,13 @@ const VIEW_PRESETS = {
 const MIN_EXAM_RATIO = 0.35;
 const MIN_ANSWER_RATIO = 0.35;
 const DEFAULT_TIMER_DURATION = 120 * 60;
+const PDF_UPLOAD_WARN_BYTES = 30 * 1024 * 1024;
+const PDF_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
+const PDF_UPLOAD_MOBILE_WARN_BYTES = 20 * 1024 * 1024;
+const PDF_PAGE_COUNT_NOTICE = 300;
 
 const pdfDocs = {};
+const pdfLoadPromises = {};
 
 const state = {
   pdfSlots: [],
@@ -455,6 +460,51 @@ function isPdfFile(file) {
   return file.type === "application/pdf" || String(file.name || "").toLowerCase().endsWith(".pdf");
 }
 
+function formatFileSizeMb(bytes) {
+  return (bytes / (1024 * 1024)).toFixed(1);
+}
+
+async function confirmPdfUploadSize(file) {
+  const size = Number(file?.size) || 0;
+  const sizeMb = formatFileSizeMb(size);
+
+  if (size > PDF_UPLOAD_MAX_BYTES) {
+    showStatus(
+      `현재 버전에서는 50MB 이하의 PDF만 지원합니다. (선택한 파일: ${sizeMb}MB)`,
+      "error"
+    );
+    return false;
+  }
+
+  const isMobile = !isDesktopSplit();
+
+  if (size > PDF_UPLOAD_WARN_BYTES) {
+    let msg =
+      `선택한 파일: ${sizeMb}MB\n\n` +
+      "대용량 PDF는 로딩과 검색에 시간이 오래 걸릴 수 있습니다.\n" +
+      "계속 진행하시겠습니까?";
+    if (isMobile && size > PDF_UPLOAD_MOBILE_WARN_BYTES) {
+      msg +=
+        `\n\n모바일 환경에서는 ${formatFileSizeMb(PDF_UPLOAD_MOBILE_WARN_BYTES)}MB를 초과하는 PDF가 더 느릴 수 있습니다.`;
+    }
+    if (!window.confirm(msg)) return false;
+  } else if (isMobile && size > PDF_UPLOAD_MOBILE_WARN_BYTES) {
+    const msg =
+      `선택한 파일: ${sizeMb}MB\n\n` +
+      "모바일 환경에서는 대용량 PDF가 느릴 수 있습니다.\n" +
+      "계속 진행하시겠습니까?";
+    if (!window.confirm(msg)) return false;
+  }
+
+  return true;
+}
+
+function maybeShowLargePageCountNotice(pageCount) {
+  if (Number(pageCount) > PDF_PAGE_COUNT_NOTICE) {
+    showToast("페이지가 많은 PDF는 검색과 페이지 이동이 느릴 수 있습니다.");
+  }
+}
+
 function getActiveSlot() {
   return state.pdfSlots[state.activeSlotIndex] || null;
 }
@@ -630,6 +680,49 @@ async function loadPdfDocument(renderBuffer) {
   } catch (err) {
     throw Object.assign(new Error(`PDF 파싱 실패: ${err.message || err}`), { phase: "parse" });
   }
+}
+
+async function ensurePdfDocLoaded(fingerprint, { registerIfMissing = false } = {}) {
+  if (!fingerprint) return null;
+  if (pdfDocs[fingerprint]) return pdfDocs[fingerprint];
+  if (pdfLoadPromises[fingerprint]) return pdfLoadPromises[fingerprint];
+
+  pdfLoadPromises[fingerprint] = (async () => {
+    try {
+      const stored = await loadPdfFromDb(fingerprint);
+      if (!stored?.buffer) {
+        console.warn(`PDF not found in IndexedDB: ${fingerprint}`);
+        return null;
+      }
+      // slice(0): PDF.js worker may detach the buffer passed to getDocument.
+      const pdfDoc = await loadPdfDocument(stored.buffer.slice(0));
+      pdfDocs[fingerprint] = pdfDoc;
+
+      const slot = state.pdfSlots.find((s) => s.fingerprint === fingerprint);
+      if (slot && registerIfMissing && attemptBridge && !slot.documentId) {
+        const doc = await attemptBridge.registerUploadedDocument(
+          stored.buffer,
+          { name: slot.name, size: stored.buffer.byteLength },
+          pdfDoc.numPages,
+          fingerprint
+        );
+        slot.documentId = doc.id;
+        slot.sourceType = doc.sourceType;
+        slot.year = doc.year ?? slot.year ?? null;
+        renderDocSelect();
+        scheduleSave();
+      }
+
+      return pdfDoc;
+    } catch (err) {
+      console.warn(`PDF load failed for ${fingerprint}:`, err);
+      return null;
+    } finally {
+      delete pdfLoadPromises[fingerprint];
+    }
+  })();
+
+  return pdfLoadPromises[fingerprint];
 }
 
 async function renderExamOrThrow() {
@@ -1043,7 +1136,7 @@ async function submitSaveToLibrary() {
 async function switchPdfSlot(fingerprint) {
   const idx = state.pdfSlots.findIndex((s) => s.fingerprint === fingerprint);
   if (idx < 0) return;
-  if (idx === state.activeSlotIndex && state.pdfDoc) return;
+  if (idx === state.activeSlotIndex && pdfDocs[fingerprint]) return;
 
   if (attemptBridge) {
     const ok = await attemptBridge.promptSaveIfDirty();
@@ -1057,6 +1150,26 @@ async function switchPdfSlot(fingerprint) {
 
   searchRunToken += 1;
   resetExamSearchInput();
+
+  const slot = getActiveSlot();
+  if (slot && !pdfDocs[fingerprint]) {
+    showStatus("PDF 로딩 중…", "loading");
+    const pdfDoc = await ensurePdfDocLoaded(fingerprint, { registerIfMissing: true });
+    if (!pdfDoc) {
+      showStatus(`「${slot.title || slot.name}」 PDF를 불러오지 못했습니다.`, "error");
+      updateExamHint();
+      if (els.examPages) els.examPages.innerHTML = "";
+    } else {
+      syncFromSlot();
+      state.pageCount = pdfDoc.numPages;
+      if (state.isTextPdf !== true) {
+        state.isTextPdf = await detectPdfTextRich(pdfDoc, { includePages: [state.currentPage] });
+        const ws = getActiveWorkspace();
+        if (ws) ws.isTextPdf = state.isTextPdf;
+      }
+      updateExamSearchAvailability();
+    }
+  }
 
   if (state.pdfDoc) {
     await applyExamViewportForCurrentPage();
@@ -1085,6 +1198,7 @@ async function deletePdfSlot(fingerprint) {
   state.pdfSlots.splice(idx, 1);
   delete state.workspaces[fingerprint];
   delete pdfDocs[fingerprint];
+  delete pdfLoadPromises[fingerprint];
   clearPageTextCache(fingerprint);
 
   try {
@@ -2054,22 +2168,24 @@ async function handlePdfUploadCore(file) {
     return;
   }
 
-  showStatus("PDF 로딩 중…", "loading");
+  const sizeOk = await confirmPdfUploadSize(file);
+  if (!sizeOk) return;
 
-  let originalBuffer;
+  const sizeMb = formatFileSizeMb(file.size);
+  showStatus(`PDF 로딩 중… (${sizeMb}MB)`, "loading");
+
+  let pdfBuffer;
   try {
-    originalBuffer = await file.arrayBuffer();
+    pdfBuffer = await file.arrayBuffer();
   } catch (err) {
     showStatus(`PDF 형식이 아닙니다: ${err.message || "파일을 읽을 수 없습니다."}`, "error");
     return;
   }
 
-  const renderBuffer = originalBuffer.slice(0);
-  const storageBuffer = originalBuffer.slice(0);
-
   let pdfDoc;
   try {
-    pdfDoc = await loadPdfDocument(renderBuffer);
+    // PDF.js worker may transfer/detach the buffer; keep pdfBuffer for IndexedDB + SHA-256.
+    pdfDoc = await loadPdfDocument(pdfBuffer.slice(0));
   } catch (err) {
     showStatus(err.message || "PDF 파싱 실패", "error");
     return;
@@ -2092,7 +2208,7 @@ async function handlePdfUploadCore(file) {
   clearPageTextCache(fp);
   const ws = ensureWorkspace(fp);
   resetExamViewportForFreshLoad();
-  const doc = await attemptBridge.registerUploadedDocument(storageBuffer, file, pdfDoc.numPages, fp);
+  const doc = await attemptBridge.registerUploadedDocument(pdfBuffer, file, pdfDoc.numPages, fp);
   slot.documentId = doc.id;
   slot.sourceType = doc.sourceType;
   slot.year = doc.year ?? null;
@@ -2130,8 +2246,9 @@ async function handlePdfUploadCore(file) {
   updateAnswerPageNav();
   updateRowStats();
   scheduleSave();
-  showStatus(`전체 ${state.pageCount}쪽 로드 완료`, "success");
-  persistPdfToDbSafe(fp, storageBuffer, file.name);
+  maybeShowLargePageCountNotice(state.pageCount);
+  showStatus(`전체 ${state.pageCount}쪽 로드 완료 (${sizeMb}MB)`, "success");
+  persistPdfToDbSafe(fp, pdfBuffer, file.name);
   await attemptBridge?.onDocumentReady?.({ forcePrompt: true });
 }
 
@@ -2560,26 +2677,9 @@ async function restoreSession() {
     renderDocSelect();
     renderPdfManageList();
 
-    for (const slot of state.pdfSlots) {
-      const stored = await loadPdfFromDb(slot.fingerprint);
-      if (stored?.buffer) {
-        try {
-          pdfDocs[slot.fingerprint] = await loadPdfDocument(stored.buffer.slice(0));
-          if (attemptBridge && !slot.documentId) {
-            const doc = await attemptBridge.registerUploadedDocument(
-              stored.buffer,
-              { name: slot.name, size: stored.buffer.byteLength },
-              pdfDocs[slot.fingerprint]?.numPages || 0,
-              slot.fingerprint
-            );
-            slot.documentId = doc.id;
-            slot.sourceType = doc.sourceType;
-            slot.year = doc.year ?? slot.year ?? null;
-          }
-        } catch (err) {
-          console.warn(`PDF restore failed for ${slot.name}:`, err);
-        }
-      }
+    const activeSlot = state.pdfSlots[state.activeSlotIndex];
+    if (activeSlot?.fingerprint) {
+      await ensurePdfDocLoaded(activeSlot.fingerprint, { registerIfMissing: true });
     }
 
     const docMap = {};
@@ -3020,6 +3120,9 @@ function resetWorkspaceMemoryState() {
 
   Object.keys(pdfDocs).forEach((key) => {
     delete pdfDocs[key];
+  });
+  Object.keys(pdfLoadPromises).forEach((key) => {
+    delete pdfLoadPromises[key];
   });
 
   clearAllPageTextCaches();
