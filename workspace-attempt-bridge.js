@@ -12,6 +12,7 @@ import {
   migrateLegacyAttempts,
   duplicateAttemptAsNew,
   deleteDraft,
+  getDraft,
 } from "./workspace-attempt-service.js";
 import {
   createAttemptSessionController,
@@ -31,6 +32,75 @@ import { stripFormatSpansFromSheet } from "./workspace-answer-format.js";
 import { applyAnswerSheetVars } from "./workspace-answer-typography.js";
 import { buildAnswerPdfFilename, downloadPdfFromClones } from "./workspace-answer-export.js";
 import { buildAnswerSheetFromPageHtml } from "./workspace-answer-clone.js";
+import {
+  fetchCloudWorkspace,
+  upsertCloudWorkspaceWithDebug,
+  unpackWorkspaceRow,
+  getAuthenticatedUser,
+  mapCloudSaveError,
+} from "./workspace-cloud-service.js";
+import { showCloudSaveDebugPanel } from "./workspace-cloud-debug.js";
+import {
+  showSaveTraceStatus,
+  traceSave,
+  traceSaveError,
+  traceSaveSuccess,
+} from "./workspace-save-trace.js";
+import { showCloudResumeModal, showLocalImportModal } from "./workspace-cloud-ui.js";
+
+function localImportPromptKey(userId, documentKey) {
+  return `cloud-import-prompted:${userId}:${documentKey}`;
+}
+
+function wasLocalImportPromptShown(userId, documentKey) {
+  return localStorage.getItem(localImportPromptKey(userId, documentKey)) === "1";
+}
+
+function markLocalImportPromptShown(userId, documentKey) {
+  localStorage.setItem(localImportPromptKey(userId, documentKey), "1");
+}
+
+function findLegacyWorkspaceSnapshot(documentId) {
+  const raw = localStorage.getItem("cpa-workspace-session");
+  if (!raw || !documentId) return null;
+  try {
+    const legacy = JSON.parse(raw);
+    const slot = (legacy.pdfSlots || []).find((s) => s.documentId === documentId);
+    if (!slot?.fingerprint) return null;
+    const ws = legacy.workspaces?.[slot.fingerprint];
+    if (!ws) return null;
+    return {
+      answerSheet: ws.answerSheet || [],
+      answerSheetPage: ws.answerSheetPage ?? 0,
+      timerSeconds: ws.timerSeconds ?? 0,
+      timerDurationSeconds: ws.timerDurationSeconds,
+      timerRemainingSeconds: ws.timerRemainingSeconds,
+      bookmarks: ws.bookmarks || [],
+      drawAnnotations: ws.drawAnnotations || [],
+      answerFontSize: ws.answerFontSize,
+      answerLetterSpacing: ws.answerLetterSpacing,
+      currentPage: ws.currentPage ?? 1,
+      pageViews: ws.pageViews || {},
+      memo: ws.attemptMemo || "",
+      tags: ws.attemptTags || [],
+      status: ws.attemptStatus || "draft",
+      caretOffset: ws.caretOffset ?? 0,
+      circledNumberSession: ws.circledNumberSession ?? null,
+      searchQuery: ws.searchQuery || "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function hasLocalResumeCandidate(ctx, ws, appState) {
+  const draft = await getDraft(ctx.problemKey);
+  if (draft?.snapshot) return true;
+  if (hasInProgressWorkspace(ws, appState)) return true;
+  const legacySnapshot = findLegacyWorkspaceSnapshot(ctx.documentId);
+  if (legacySnapshot && hasInProgressWorkspace(legacySnapshot, null)) return true;
+  return false;
+}
 
 export function initAttemptBridge({
   state,
@@ -43,14 +113,17 @@ export function initAttemptBridge({
   setSaveStatus,
   examResultController,
   flushSaveNow,
+  showStatus,
   onResumeRestored,
   flushAnswerPersist,
   restoreExamViewport,
+  resolveDocumentKeyForSave,
 }) {
   let attemptUi = null;
   let attemptHistory = null;
   let skipAttemptPrompt = false;
   let activeProblem = null;
+  let saveAndPauseInFlight = false;
 
   const attemptSession = createAttemptSessionController({
     getSnapshot: () => {
@@ -185,6 +258,100 @@ export function initAttemptBridge({
     showToast?.("새 풀이를 시작합니다.");
   }
 
+  async function tryCloudResumeFlow(ctx, ws) {
+    let user;
+    try {
+      user = await getAuthenticatedUser();
+    } catch (authErr) {
+      console.warn("[cloud-resume] auth lookup failed:", authErr);
+      return false;
+    }
+    if (!user?.id || !ctx.documentId) return false;
+
+    try {
+      const cloudRow = await fetchCloudWorkspace(ctx.documentId);
+      if (cloudRow) {
+        const snapshot = unpackWorkspaceRow(cloudRow);
+        const choice = await showCloudResumeModal({
+          documentName: snapshot?.documentName || ctx.documentTitle,
+          updatedAt: cloudRow.updated_at,
+        });
+
+        if (choice === "continue" && snapshot) {
+          applySnapshotToWorkspace(snapshot, state, ws);
+          attemptSession.markClean(buildWorkspaceSnapshot(state, ws));
+          await refreshWorkspaceAfterLoad();
+          onResumeRestored?.("cloud");
+          showToast?.("계정에 저장된 풀이를 불러왔습니다.");
+          return true;
+        }
+
+        if (choice === "fresh") {
+          await startFreshAttempt(ctx, { copyTags: false, copyMemo: false, copyAnnotations: false });
+          return true;
+        }
+
+        if (choice === "cancel") {
+          return false;
+        }
+
+        return true;
+      }
+
+      if (!wasLocalImportPromptShown(user.id, ctx.documentId)) {
+        const hasLocal = await hasLocalResumeCandidate(ctx, ws, state);
+        if (hasLocal) {
+          markLocalImportPromptShown(user.id, ctx.documentId);
+          const importChoice = await showLocalImportModal();
+          if (importChoice === "import") {
+            flushAnswerPersist?.();
+            const draft = await getDraft(ctx.problemKey);
+            if (draft?.snapshot) {
+              applySnapshotToWorkspace(draft.snapshot, state, ws);
+            } else if (!hasInProgressWorkspace(ws, state)) {
+              const legacySnapshot = findLegacyWorkspaceSnapshot(ctx.documentId);
+              if (legacySnapshot) {
+                applySnapshotToWorkspace(legacySnapshot, state, ws);
+              }
+            }
+            const snapshot = buildWorkspaceSnapshot(state, ws);
+            if (!snapshot) return true;
+
+            setSaveStatus?.("pending");
+            try {
+              const debugReport = await upsertCloudWorkspaceWithDebug({
+                documentKey: ctx.documentId,
+                documentName: ctx.documentTitle || getActiveSlot()?.name,
+                snapshot,
+                legacyFingerprint: ctx.legacyFingerprint,
+              });
+              showCloudSaveDebugPanel(debugReport);
+              if (!debugReport.success) {
+                setSaveStatus?.("error");
+                showToast?.(mapCloudSaveError({ code: debugReport.error?.code, message: debugReport.error?.message }));
+                return true;
+              }
+              attemptSession.markClean(snapshot);
+              setSaveStatus?.("savedDb");
+              showToast?.("기존 답안을 계정에 저장했습니다.");
+              await refreshWorkspaceAfterLoad();
+              onResumeRestored?.("cloud");
+            } catch (err) {
+              console.error("[cloud-import] failed:", err);
+              setSaveStatus?.("error");
+              showToast?.(mapCloudSaveError(err));
+            }
+            return true;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[cloud-resume] lookup failed:", err);
+    }
+
+    return false;
+  }
+
   async function onDocumentReady({ forcePrompt = false } = {}) {
     if (document.body.dataset.mainView && document.body.dataset.mainView !== "solve") {
       return;
@@ -194,6 +361,9 @@ export function initAttemptBridge({
     attemptSession.bindSession({ key: ctx.problemKey, docId: ctx.documentId });
 
     const ws = getActiveWorkspace();
+    const cloudHandled = await tryCloudResumeFlow(ctx, ws);
+    if (cloudHandled) return;
+
     const inProgress = hasInProgressWorkspace(ws, state);
 
     const draft = await attemptSession.restoreDraftIfAny(ctx.problemKey);
@@ -246,6 +416,24 @@ export function initAttemptBridge({
   }
 
   async function saveCompletedAttempt({ pdfSaved, pdfFilename }) {
+    flushAnswerPersist?.();
+
+    try {
+      const report = await persistWorkspaceToCloudWithDebug({ flushLocal: false });
+      showCloudSaveDebugPanel(report);
+      if (!report.success) {
+        throw Object.assign(new Error(report.error?.message || "CLOUD_SAVE_FAILED"), {
+          code: report.error?.code,
+          details: report.error?.details,
+          hint: report.error?.hint,
+          status: report.status,
+        });
+      }
+    } catch (cloudErr) {
+      console.error("[saveCompletedAttempt] cloud save failed:", cloudErr);
+      throw cloudErr;
+    }
+
     const payload = buildAttemptPayload({
       status: "completed",
       completedAt: new Date().toISOString(),
@@ -380,11 +568,140 @@ export function initAttemptBridge({
 
   window.__workspaceAttemptPreview = previewAttempt;
 
-  async function saveAndPause() {
+  async function persistWorkspaceToCloudWithDebug({ flushLocal = true } = {}) {
     flushAnswerPersist?.();
-    flushSaveNow?.();
-    await attemptSession.flushDraftNow();
-    showToast?.("풀이를 저장했습니다. 같은 시험지를 다시 열면 이어서 풀 수 있습니다.");
+
+    const ws = getActiveWorkspace();
+    const saveTarget = (await resolveDocumentKeyForSave?.()) || null;
+    const ctx = getDocumentContext();
+    const documentKey = saveTarget?.documentKey || ctx?.documentId;
+    const documentName =
+      saveTarget?.documentName || ctx?.documentTitle || getActiveSlot()?.title || getActiveSlot()?.name;
+    const legacyFingerprint =
+      saveTarget?.legacyFingerprint || ctx?.legacyFingerprint || getActiveSlot()?.fingerprint || "";
+    const snapshot = buildWorkspaceSnapshot(state, ws);
+
+    if (!documentKey || !snapshot) {
+      traceSaveError({
+        code: "SAVE_CONTEXT_MISSING",
+        message: "시험지 또는 답안 컨텍스트가 없습니다.",
+      });
+      return {
+        success: false,
+        userIdPresent: false,
+        userIdPreview: null,
+        sessionPresent: false,
+        documentKey: documentKey || null,
+        tableName: "workspaces",
+        onConflict: "user_id,document_key",
+        payloadFields: [],
+        method: null,
+        error: {
+          code: "SAVE_CONTEXT_MISSING",
+          message: "시험지 또는 답안 컨텍스트가 없습니다.",
+          details: null,
+          hint: null,
+        },
+        status: null,
+        data: null,
+      };
+    }
+
+    if (flushLocal) {
+      try {
+        flushSaveNow?.({ silentStatus: true });
+        await attemptSession.flushDraftNow();
+      } catch (localErr) {
+        console.warn("[persistWorkspaceToCloudWithDebug] local backup failed:", localErr);
+      }
+    }
+
+    traceSave("4", `payload fields: ${["documentKey", "documentName", "snapshot", "legacyFingerprint"].join(", ")}`);
+    showSaveTraceStatus("데이터 준비 완료");
+
+    return upsertCloudWorkspaceWithDebug({
+      documentKey,
+      documentName,
+      snapshot,
+      legacyFingerprint,
+    });
+  }
+
+  async function saveAndPause() {
+    if (saveAndPauseInFlight) {
+      traceSaveError({
+        code: "SAVE_AND_PAUSE_IN_FLIGHT",
+        message: "saveAndPause가 이미 실행 중입니다.",
+      });
+      return false;
+    }
+
+    const btn = document.getElementById("ws-save-pause-btn");
+    saveAndPauseInFlight = true;
+    if (btn) btn.disabled = true;
+    setSaveStatus?.("pending");
+
+    try {
+      const report = await persistWorkspaceToCloudWithDebug();
+      showCloudSaveDebugPanel(report);
+
+      if (!report.success) {
+        traceSaveError({
+          code: report.error?.code ?? null,
+          message: report.error?.message ?? null,
+          details: report.error?.details ?? null,
+          hint: report.error?.hint ?? null,
+          status: report.status ?? null,
+        });
+        console.error("[saveAndPause] cloud save failed:", report.error);
+        setSaveStatus?.("error");
+        showToast?.(mapCloudSaveError({ code: report.error?.code, message: report.error?.message }));
+        showStatus?.(mapCloudSaveError({ code: report.error?.code, message: report.error?.message }), "error");
+        return false;
+      }
+
+      traceSaveSuccess();
+      const snapshot = buildWorkspaceSnapshot(state, getActiveWorkspace());
+      attemptSession.markClean(snapshot);
+      setSaveStatus?.("savedDb");
+      showToast?.("저장되었습니다.");
+      return true;
+    } catch (err) {
+      traceSaveError({
+        code: err?.code ?? null,
+        message: err?.message ?? String(err),
+        details: err?.details ?? null,
+        hint: err?.hint ?? null,
+        status: err?.status ?? null,
+      });
+      console.error("[saveAndPause] unexpected failure:", err);
+      showCloudSaveDebugPanel({
+        success: false,
+        userIdPresent: false,
+        userIdPreview: null,
+        sessionPresent: false,
+        documentKey: null,
+        tableName: "workspaces",
+        onConflict: "user_id,document_key",
+        payloadFields: [],
+        method: null,
+        error: {
+          code: err?.code ?? null,
+          message: err?.message ?? String(err),
+          details: err?.details ?? null,
+          hint: err?.hint ?? null,
+        },
+        status: err?.status ?? null,
+        data: null,
+      });
+      setSaveStatus?.("error");
+      showToast?.("저장에 실패했습니다.");
+      showStatus?.("저장에 실패했습니다.", "error");
+      return false;
+    } finally {
+      saveAndPauseInFlight = false;
+      if (btn) btn.disabled = false;
+    }
   }
 
   window.addEventListener("beforeunload", (e) => {

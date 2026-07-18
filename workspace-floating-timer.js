@@ -108,6 +108,22 @@ export function createFloatingTimer({
     if (customInputEl) customInputEl.value = String(minutes);
   }
 
+  function hideTimer() {
+    rootEl.hidden = true;
+    rootEl.setAttribute("hidden", "");
+    rootEl.style.display = "none";
+    rootEl.classList.add("is-hidden");
+    const settingsPanel = document.getElementById("ws-timer-settings-panel");
+    if (settingsPanel) settingsPanel.hidden = true;
+  }
+
+  function showTimer() {
+    rootEl.hidden = false;
+    rootEl.removeAttribute("hidden");
+    rootEl.style.display = "";
+    rootEl.classList.remove("is-hidden");
+  }
+
   function canStartDrag(target) {
     if (!dragHandleEl) return false;
     return dragHandleEl.contains(target);
@@ -143,5 +159,5 @@ export function createFloatingTimer({
 
   restore();
 
-  return { restore, refreshDisplay, applyPosition, syncSettingsUi };
+  return { restore, refreshDisplay, applyPosition, syncSettingsUi, hideTimer, showTimer };
 }

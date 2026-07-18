@@ -8,7 +8,16 @@
   <link rel="stylesheet" href="workspace.css">
 </head>
 <body>
-  <div id="app-root" class="app-root app-mvp">
+  <div id="auth-gate" class="auth-gate">
+    <div class="auth-gate-card">
+      <h1 class="auth-gate-title">CPA Audit Workspace</h1>
+      <p class="auth-gate-desc">회계감사 사례형 문제를 실제 답안지 형식으로 작성하고 관리할 수 있는 웹 기반 Workspace</p>
+      <p id="auth-gate-error" class="auth-gate-error" hidden role="alert"></p>
+      <button type="button" id="auth-google-btn" class="ws-btn ws-btn-primary auth-google-btn">Google로 계속하기</button>
+    </div>
+  </div>
+
+  <div id="app-root" class="app-root app-mvp" hidden>
     <nav class="app-main-nav mvp-hidden" aria-label="메인 메뉴" hidden>
       <span class="app-brand">회계감사 Workspace</span>
       <button type="button" class="app-main-nav-btn is-active" data-main-view="library">📚 Problem Library</button>
@@ -101,6 +110,12 @@
       <button type="button" id="ws-preview-btn" class="ws-btn">답안지 미리보기</button>
       <button type="button" id="ws-save-pause-btn" class="ws-btn" title="답안·주석·페이지 위치를 저장하고 나중에 이어서 풀기">저장하고 나가기</button>
       <span id="ws-save-status" class="ws-save-status">저장됨</span>
+      <div class="ws-toolbar-spacer"></div>
+      <div id="ws-auth-user" class="ws-auth-user" hidden>
+        <img id="ws-auth-avatar" class="ws-auth-avatar" alt="" width="24" height="24" hidden />
+        <span id="ws-auth-label" class="ws-auth-label"></span>
+        <button type="button" id="ws-auth-logout" class="ws-btn ws-auth-logout-btn">로그아웃</button>
+      </div>
       <span id="ws-status" class="ws-status" aria-live="polite"></span>
     </header>
 
@@ -583,7 +598,33 @@
     </div>
   </div>
 
-  <div id="ws-floating-timer" class="ws-floating-timer" aria-label="시험 타이머">
+  <div id="ws-cloud-resume-modal" class="ws-modal ws-modal-sm" hidden>
+    <div class="ws-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="ws-cloud-resume-title">
+      <header class="ws-modal-header"><h2 id="ws-cloud-resume-title">저장된 풀이가 있습니다</h2></header>
+      <div class="ws-modal-body" id="ws-cloud-resume-summary"></div>
+      <footer class="ws-modal-footer ws-modal-footer-col">
+        <button type="button" class="ws-btn ws-btn-primary" data-action="cloud-continue">이어서 풀기</button>
+        <button type="button" class="ws-btn" data-action="cloud-fresh">새로 시작하기</button>
+        <button type="button" class="ws-btn" data-action="cloud-cancel">취소</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="ws-cloud-import-modal" class="ws-modal ws-modal-sm" hidden>
+    <div class="ws-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="ws-cloud-import-title">
+      <header class="ws-modal-header"><h2 id="ws-cloud-import-title">기존 답안 가져오기</h2></header>
+      <div class="ws-modal-body">
+        <p>이 브라우저에 저장된 기존 답안을 계정으로 가져오시겠습니까?</p>
+        <p class="ws-cloud-resume-hint">가져오기를 선택하면 현재 계정의 클라우드 저장소에 저장됩니다.</p>
+      </div>
+      <footer class="ws-modal-footer ws-modal-footer-col">
+        <button type="button" class="ws-btn ws-btn-primary" data-action="import-local">가져오기</button>
+        <button type="button" class="ws-btn" data-action="skip-import">나중에</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="ws-floating-timer" class="ws-floating-timer" hidden aria-label="시험 타이머">
     <div class="ws-floating-timer-drag" id="ws-floating-timer-drag" title="드래그하여 이동"></div>
     <div class="ws-floating-timer-body">
       <span id="ws-float-timer-display" class="ws-floating-timer-display">02:00:00</span>

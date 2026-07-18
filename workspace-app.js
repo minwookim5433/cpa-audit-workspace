@@ -52,10 +52,12 @@ import {
   TEMPLATE_STORE,
 } from "./workspace-attempt-db.js";
 import { initAttemptBridge } from "./workspace-attempt-bridge.js";
+import { getAuthUserId } from "./workspace-auth.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/node_modules/pdfjs-dist/build/pdf.worker.mjs";
 
-const STORAGE_KEY = "cpa-workspace-session";
+const LEGACY_STORAGE_KEY = "cpa-workspace-session";
+let currentUserId = null;
 const DEFAULT_PANEL_RATIO = 0.5;
 const VIEW_PRESETS = {
   equal: 0.5,
@@ -126,6 +128,8 @@ let examResultController = null;
 let currentExamAttempt = null;
 let attemptBridge = null;
 let floatingTimer = null;
+let workspaceDomBound = false;
+let logoutCleanupInProgress = false;
 
 const els = {};
 
@@ -201,6 +205,9 @@ function setSaveStatus(kind = "saved") {
   } else if (kind === "error") {
     els.saveStatus.textContent = "저장 실패";
     els.saveStatus.className = "ws-save-status is-error";
+  } else if (kind === "savedDb") {
+    els.saveStatus.textContent = "저장 완료";
+    els.saveStatus.className = "ws-save-status";
   } else {
     els.saveStatus.textContent = "저장됨";
     els.saveStatus.className = "ws-save-status";
@@ -211,10 +218,16 @@ function showResumeBanner(source = "session") {
   const banner = document.getElementById("ws-resume-banner");
   const text = document.getElementById("ws-resume-banner-text");
   if (!banner || !text) return;
-  text.textContent =
-    source === "draft"
-      ? "저장된 초안을 복원했습니다. 답안·주석·시험지 페이지 위치를 이어서 풀 수 있습니다."
-      : "마지막 풀이 상태를 불러왔습니다. 답안·주석·시험지 페이지 위치를 이어서 풀 수 있습니다.";
+  if (source === "cloud") {
+    text.textContent =
+      "계정에 저장된 풀이를 불러왔습니다. 답안·주석·시험지 페이지·타이머 상태를 이어서 풀 수 있습니다.";
+  } else if (source === "draft") {
+    text.textContent =
+      "저장된 초안을 복원했습니다. 답안·주석·시험지 페이지 위치를 이어서 풀 수 있습니다.";
+  } else {
+    text.textContent =
+      "마지막 풀이 상태를 불러왔습니다. 답안·주석·시험지 페이지 위치를 이어서 풀 수 있습니다.";
+  }
   banner.hidden = false;
   clearTimeout(showResumeBanner._timer);
   showResumeBanner._timer = setTimeout(() => {
@@ -247,6 +260,50 @@ async function restoreExamViewportFromWorkspace() {
   updatePageNav();
   if (els.searchInput) els.searchInput.value = state.searchQuery || "";
   renderSearchResults(els.searchResults, state.searchResults, state.searchIdx, jumpToSearchResult);
+}
+
+function getSessionStorageKey(userId = currentUserId) {
+  return userId ? `workspace:${userId}:session` : LEGACY_STORAGE_KEY;
+}
+
+async function resolveCurrentUserId() {
+  try {
+    currentUserId = await getAuthUserId();
+  } catch {
+    currentUserId = null;
+  }
+  return currentUserId;
+}
+
+function buildSessionPayload() {
+  return {
+    pdfSlots: state.pdfSlots.map((s) => ({
+      fingerprint: s.fingerprint,
+      name: s.name,
+      title: s.title || s.name,
+      year: s.year ?? null,
+      documentId: s.documentId || "",
+      sourceType: s.sourceType || "custom",
+    })),
+    activeSlotIndex: state.activeSlotIndex,
+    workspaces: state.workspaces,
+    panelRatio: state.panelRatio,
+    viewMode: state.viewMode,
+    mobileTab: state.mobileTab,
+    hasTemplate: Boolean(state.sheetTemplate?.dataUrl),
+    timerRunning: state.timerRunning,
+    timerDurationSeconds: state.timerDurationSeconds,
+    timerRemainingSeconds: state.timerRemainingSeconds,
+    timerPos: state.timerPos,
+    drawTool: state.drawTool,
+    lineColor: state.lineColor,
+    highlightColor: state.highlightColor,
+    penColor: state.penColor,
+    penWidth: state.penWidth,
+    floatToolbarPos: state.floatToolbarPos,
+    floatToolbarMinimized: state.floatToolbarMinimized,
+    floatToolbarVertical: state.floatToolbarVertical,
+  };
 }
 
 function pdfFingerprint(file) {
@@ -488,6 +545,43 @@ async function deletePdfFromDb(fingerprint) {
   });
 }
 
+async function resolveDocumentKeyForSave() {
+  const slot = getActiveSlot();
+  if (!slot) return null;
+
+  if (slot.documentId) {
+    return {
+      documentKey: slot.documentId,
+      documentName: slot.title || slot.name,
+      legacyFingerprint: slot.fingerprint,
+    };
+  }
+
+  if (!slot.fingerprint) return null;
+
+  const stored = await loadPdfFromDb(slot.fingerprint);
+  if (!stored?.buffer || !attemptBridge?.registerUploadedDocument) return null;
+
+  const doc = await attemptBridge.registerUploadedDocument(
+    stored.buffer,
+    { name: slot.name, size: stored.buffer.byteLength },
+    pdfDocs[slot.fingerprint]?.numPages || state.pageCount || 0,
+    slot.fingerprint
+  );
+
+  slot.documentId = doc.id;
+  slot.sourceType = doc.sourceType;
+  slot.year = doc.year ?? slot.year ?? null;
+  renderDocSelect();
+  scheduleSave();
+
+  return {
+    documentKey: doc.id,
+    documentName: slot.title || slot.name,
+    legacyFingerprint: slot.fingerprint,
+  };
+}
+
 async function saveTemplateToDb(dataUrl, name, type) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -508,15 +602,15 @@ async function loadTemplateFromDb() {
   });
 }
 
-function flushSaveNow() {
+function flushSaveNow({ silentStatus = false } = {}) {
   clearTimeout(saveDebounce);
   try {
     saveSession();
     attemptBridge?.flushAttemptDraft?.();
-    setSaveStatus("saved");
+    if (!silentStatus) setSaveStatus("saved");
   } catch (err) {
     console.warn("Save failed:", err);
-    setSaveStatus("error");
+    if (!silentStatus) setSaveStatus("error");
   }
 }
 
@@ -582,37 +676,9 @@ function scheduleSave() {
 
 function saveSession() {
   syncToSlot();
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      pdfSlots: state.pdfSlots.map((s) => ({
-        fingerprint: s.fingerprint,
-        name: s.name,
-        title: s.title || s.name,
-        year: s.year ?? null,
-        documentId: s.documentId || "",
-        sourceType: s.sourceType || "custom",
-      })),
-      activeSlotIndex: state.activeSlotIndex,
-      workspaces: state.workspaces,
-      panelRatio: state.panelRatio,
-      viewMode: state.viewMode,
-      mobileTab: state.mobileTab,
-      hasTemplate: Boolean(state.sheetTemplate?.dataUrl),
-      timerRunning: state.timerRunning,
-      timerDurationSeconds: state.timerDurationSeconds,
-      timerRemainingSeconds: state.timerRemainingSeconds,
-      timerPos: state.timerPos,
-      drawTool: state.drawTool,
-      lineColor: state.lineColor,
-      highlightColor: state.highlightColor,
-      penColor: state.penColor,
-      penWidth: state.penWidth,
-      floatToolbarPos: state.floatToolbarPos,
-      floatToolbarMinimized: state.floatToolbarMinimized,
-      floatToolbarVertical: state.floatToolbarVertical,
-    })
-  );
+  const payload = buildSessionPayload();
+  const key = getSessionStorageKey();
+  localStorage.setItem(key, JSON.stringify(payload));
 }
 
 function renderDocSelect() {
@@ -1529,15 +1595,28 @@ async function finalizeExamEnd() {
   }
 
   showStatus("답안 저장 중…", "loading");
-  flushSaveNow();
+  flushSaveNow({ silentStatus: true });
 
-  const attempt = await attemptBridge.saveCompletedAttempt({
-    pdfSaved: false,
-    pdfFilename: "",
-  });
-  currentExamAttempt = attempt;
-  showStatus("시험이 종료되었습니다. PDF 저장 버튼으로 답안지를 저장하세요.", "success");
-  examResultController?.open(attempt);
+  try {
+    const attempt = await attemptBridge.saveCompletedAttempt({
+      pdfSaved: false,
+      pdfFilename: "",
+    });
+    if (!attempt) {
+      showStatus("저장에 실패했습니다.", "error");
+      return;
+    }
+    currentExamAttempt = attempt;
+    setSaveStatus("savedDb");
+    showStatus("시험이 종료되었습니다. PDF 저장 버튼으로 답안지를 저장하세요.", "success");
+    showToast("저장되었습니다.");
+    examResultController?.open(attempt);
+  } catch (err) {
+    console.error("[finalizeExamEnd] save failed:", err);
+    setSaveStatus("error");
+    showStatus("저장에 실패했습니다.", "error");
+    showToast("저장에 실패했습니다.");
+  }
 }
 
 function retryExamFromResult() {
@@ -1758,6 +1837,34 @@ function goToAnswerPage(pageIndex) {
 }
 
 async function handlePdfUpload(file) {
+  if (!isPdfFile(file)) {
+    showStatus("PDF 형식이 아닙니다. .pdf 파일만 업로드할 수 있습니다.", "error");
+    return;
+  }
+
+  try {
+    await window.__ensureWorkspace?.();
+  } catch (err) {
+    console.error("[handlePdfUpload] ensureWorkspace failed:", err);
+    showStatus("워크스페이스 준비 실패. 새로고침 후 다시 시도해주세요.", "error");
+    return;
+  }
+
+  if (!attemptBridge?.registerUploadedDocument) {
+    console.error("[handlePdfUpload] attemptBridge missing");
+    showStatus("업로드 모듈이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.", "error");
+    return;
+  }
+
+  try {
+    await handlePdfUploadCore(file);
+  } catch (err) {
+    console.error("[handlePdfUpload] failed:", err);
+    showStatus(err?.message || "PDF 업로드 실패", "error");
+  }
+}
+
+async function handlePdfUploadCore(file) {
   if (!isPdfFile(file)) {
     showStatus("PDF 형식이 아닙니다. .pdf 파일만 업로드할 수 있습니다.", "error");
     return;
@@ -2070,7 +2177,12 @@ function migrateLegacySession(data) {
 
 async function restoreSession() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    await resolveCurrentUserId();
+    const userKey = getSessionStorageKey();
+    let raw = localStorage.getItem(userKey);
+    if (!raw && !currentUserId) {
+      raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    }
     if (!raw) return;
     let data = migrateLegacySession(JSON.parse(raw));
 
@@ -2279,10 +2391,16 @@ function bindTimerControls() {
 
 function bindEvents() {
   els.pdfBtn?.addEventListener("click", () => els.pdfInput?.click());
-  els.pdfInput?.addEventListener("change", (e) => {
+  els.pdfInput?.addEventListener("change", async (e) => {
     const f = e.target.files?.[0];
-    if (f) handlePdfUpload(f);
     e.target.value = "";
+    if (!f) return;
+    try {
+      await handlePdfUpload(f);
+    } catch (err) {
+      console.error("[pdf-input] upload failed:", err);
+      showStatus(err?.message || "PDF 업로드 실패", "error");
+    }
   });
 
   els.docSelect?.addEventListener("change", () => {
@@ -2304,9 +2422,6 @@ function bindEvents() {
     if (e.target === els.docManageModal) els.docManageModal.hidden = true;
   });
 
-  document.getElementById("ws-save-pause-btn")?.addEventListener("click", () => {
-    attemptBridge?.saveAndPause?.();
-  });
   document.getElementById("ws-resume-banner-close")?.addEventListener("click", () => {
     const banner = document.getElementById("ws-resume-banner");
     if (banner) banner.hidden = true;
@@ -2479,46 +2594,224 @@ function isEditableTarget(el) {
   return tag === "input" || tag === "textarea" || el.isContentEditable;
 }
 
-export async function initWorkspace() {
-  cacheElements();
-  bindVerticalResizer();
-  initPreviewModal();
+function resetTimerMemoryState() {
+  state.timerRunning = false;
+  state.timerSeconds = 0;
+  state.timerDurationSeconds = DEFAULT_TIMER_DURATION;
+  state.timerRemainingSeconds = DEFAULT_TIMER_DURATION;
+}
+
+function hideOrRemoveFloatingTimer() {
+  if (floatingTimer?.hideTimer) {
+    floatingTimer.hideTimer();
+  } else {
+    const root = document.getElementById("ws-floating-timer");
+    if (root) {
+      root.hidden = true;
+      root.setAttribute("hidden", "");
+      root.style.display = "none";
+      root.classList.add("is-hidden");
+    }
+  }
+  const settingsPanel = document.getElementById("ws-timer-settings-panel");
+  if (settingsPanel) settingsPanel.hidden = true;
+}
+
+function showFloatingTimer() {
   initFloatingTimerWidget();
-  bindEvents();
-  bindTimerControls();
-  applyViewMode("equal");
-  updateDrawToolUi();
+  const root = document.getElementById("ws-floating-timer");
+  if (root) {
+    root.style.display = "";
+    root.classList.remove("is-hidden");
+  }
+  if (floatingTimer?.showTimer) {
+    floatingTimer.showTimer();
+    return;
+  }
+  if (root) {
+    root.hidden = false;
+    root.removeAttribute("hidden");
+  }
+}
 
-  attemptBridge = initAttemptBridge({
-    state,
-    getActiveWorkspace,
-    getActiveSlot,
-    collectSubmissionStats,
-    countLinesFn: (pages) => {
-      const editor = answerDocController?.getEditorEl?.();
-      return countUsedRows(pages, (text) => countPageUsedRowsFromText(text, editor));
-    },
-    refreshWorkspaceUi,
-    showToast,
-    setSaveStatus,
-    examResultController,
-    flushSaveNow,
-    onResumeRestored: showResumeBanner,
-    flushAnswerPersist: () => answerDocController?.flushPersist?.(),
-    restoreExamViewport: restoreExamViewportFromWorkspace,
+function cleanupTimer() {
+  clearTimeout(showResumeBanner._timer);
+  clearTimeout(showToast._t);
+
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+
+  resetTimerMemoryState();
+  hideOrRemoveFloatingTimer();
+  updateTimerDisplay();
+}
+
+function closeAllWorkspaceModals() {
+  document.querySelectorAll(".ws-modal").forEach((modal) => {
+    modal.hidden = true;
   });
-  window.__workspaceOpenForProblem = openForProblem;
-  window.__workspaceSwitchPdf = switchPdfSlot;
-  window.__workspaceAttemptBridge = attemptBridge;
+  document.body.classList.remove("ws-modal-open");
+}
 
+function clearWorkspaceDomSurfaces() {
+  if (els.examPages) {
+    els.examPages.innerHTML = "";
+    els.examPages.hidden = true;
+  }
+  if (els.answerEditor) {
+    els.answerEditor.innerHTML = "";
+  }
+  if (els.searchResults) els.searchResults.innerHTML = "";
+  if (els.bookmarkPanel) els.bookmarkPanel.innerHTML = "";
+  if (els.toast) {
+    els.toast.hidden = true;
+    els.toast.textContent = "";
+  }
+}
+
+function resetWorkspaceMemoryState() {
+  renderToken += 1;
+
+  attemptBridge?.attemptSession?.clearSession?.({ removeDraft: false });
+  attemptBridge?.clearActiveProblem?.();
+
+  state.pdfSlots = [];
+  state.activeSlotIndex = 0;
+  state.workspaces = {};
+  state.pdfDoc = null;
+  state.pdfFingerprint = null;
+  state.pdfName = "";
+  state.docTitle = "";
+  state.pageCount = 0;
+  state.currentPage = 1;
+  state.scale = 1;
+  state.isTextPdf = null;
+  state.pageTexts = null;
+  state.bookmarks = [];
+  state.drawAnnotations = [];
+  state.answerSheet = createEmptyAnswerSheet();
+  state.answerSheetPage = 0;
+  state.searchQuery = "";
+  state.searchResults = [];
+  state.searchIdx = 0;
+  state.caretOffset = 0;
+  state.circledNumberSession = null;
+  state.answerFontSize = DEFAULT_ANSWER_FONT_SIZE;
+  state.answerLetterSpacing = DEFAULT_ANSWER_LETTER_SPACING;
+  state.listMode = null;
+  state.sheetTemplate = null;
+
+  Object.keys(pdfDocs).forEach((key) => {
+    delete pdfDocs[key];
+  });
+
+  currentUserId = null;
+  currentExamAttempt = null;
+
+  drawControllerExam = null;
+  drawControllerAnswer = null;
+  activeDrawSurface = "exam";
+}
+
+export async function cleanupWorkspaceForLogout() {
+  hideOrRemoveFloatingTimer();
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  state.timerRunning = false;
+
+  if (logoutCleanupInProgress) return;
+  logoutCleanupInProgress = true;
+
+  try {
+    clearTimeout(saveDebounce);
+    saveDebounce = null;
+
+    cleanupTimer();
+    resetWorkspaceMemoryState();
+    closeAllWorkspaceModals();
+    clearWorkspaceDomSurfaces();
+
+    const banner = document.getElementById("ws-resume-banner");
+    if (banner) banner.hidden = true;
+
+    renderDocSelect();
+    renderPdfManageList();
+    updateExamHint();
+    setupAnswerEditor();
+    updateAnswerPageNav();
+    updateRowStats();
+    setSaveStatus("saved");
+    showStatus("", "info");
+  } finally {
+    logoutCleanupInProgress = false;
+  }
+}
+
+/** @deprecated Use cleanupWorkspaceForLogout */
+export const resetWorkspaceOnLogout = cleanupWorkspaceForLogout;
+
+export async function prepareWorkspaceForAuthenticatedUser() {
+  await resolveCurrentUserId();
   await restoreSession();
+
   if (VIEW_PRESETS[state.viewMode]) applyPanelRatio(VIEW_PRESETS[state.viewMode]);
   else applyPanelRatio(state.panelRatio);
+
+  showFloatingTimer();
   floatingTimer?.restore();
   normalizeTimerState({ pause: true });
   updateTimerDisplay();
   floatingTimer?.refreshDisplay();
   applyAnswerTypography(getAnswerTypography(), { save: false });
+}
+
+export async function initWorkspace() {
+  cacheElements();
+
+  if (!workspaceDomBound) {
+    bindVerticalResizer();
+    initPreviewModal();
+    bindEvents();
+    bindTimerControls();
+    applyViewMode("equal");
+    updateDrawToolUi();
+    workspaceDomBound = true;
+  }
+
+  initFloatingTimerWidget();
+
+  if (!attemptBridge) {
+    attemptBridge = initAttemptBridge({
+      state,
+      getActiveWorkspace,
+      getActiveSlot,
+      collectSubmissionStats,
+      countLinesFn: (pages) => {
+        const editor = answerDocController?.getEditorEl?.();
+        return countUsedRows(pages, (text) => countPageUsedRowsFromText(text, editor));
+      },
+      refreshWorkspaceUi,
+      showToast,
+      setSaveStatus,
+      examResultController,
+      flushSaveNow,
+      showStatus,
+      onResumeRestored: showResumeBanner,
+      flushAnswerPersist: () => answerDocController?.flushPersist?.(),
+      restoreExamViewport: restoreExamViewportFromWorkspace,
+      resolveDocumentKeyForSave,
+    });
+    window.__workspaceOpenForProblem = openForProblem;
+    window.__workspaceSwitchPdf = switchPdfSlot;
+  }
+
+  window.__workspaceAttemptBridge = attemptBridge;
+
+  await prepareWorkspaceForAuthenticatedUser();
 }
 
 if (typeof window !== "undefined") {

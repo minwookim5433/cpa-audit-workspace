@@ -77,6 +77,105 @@ body {
   max-width: min(42vw, 520px);
 }
 
+.ws-toolbar-spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.ws-auth-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ws-auth-user[hidden] {
+  display: none !important;
+}
+
+.ws-auth-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--ws-border);
+}
+
+.ws-auth-label {
+  font-size: 0.82rem;
+  color: var(--ws-text);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-auth-logout-btn {
+  font-size: 0.8rem;
+}
+
+.auth-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--ws-bg);
+}
+
+.auth-gate[hidden] {
+  display: none !important;
+}
+
+.auth-gate-card {
+  width: min(100%, 420px);
+  padding: 32px 28px;
+  background: var(--ws-surface);
+  border: 1px solid var(--ws-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  text-align: center;
+}
+
+.auth-gate-title {
+  margin: 0 0 10px;
+  font-size: 1.35rem;
+  color: var(--ws-accent);
+}
+
+.auth-gate-desc {
+  margin: 0 0 20px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--ws-muted);
+}
+
+.auth-gate-error {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff1f0;
+  border: 1px solid #ffccc7;
+  color: #a8071a;
+  font-size: 0.84rem;
+  text-align: left;
+}
+
+.auth-gate-error[hidden] {
+  display: none !important;
+}
+
+.auth-google-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.auth-google-btn:disabled,
+.auth-google-btn.is-loading {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .ws-usage-guide {
   flex-shrink: 0;
   padding: 6px 16px;
@@ -311,6 +410,13 @@ body {
   display: none !important;
 }
 
+.ws-floating-timer[hidden],
+.ws-floating-timer.is-hidden {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 .ws-floating-timer {
   position: fixed;
   z-index: 1300;
@@ -367,6 +473,102 @@ body {
   padding: 8px 10px 10px;
   border-top: 1px solid var(--ws-border);
   background: #fafbfc;
+}
+
+.ws-save-trace-status {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 1400;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(50vh, 420px);
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.ws-save-trace-status.is-success {
+  border-color: #059669;
+}
+
+.ws-save-trace-status.is-error {
+  border-color: #dc2626;
+}
+
+.ws-save-trace-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+}
+
+.ws-save-trace-status-body {
+  margin: 0;
+  padding: 10px 12px;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
+  max-height: calc(min(50vh, 420px) - 42px);
+}
+
+.ws-save-trace-status-close {
+  padding: 2px 8px;
+  min-width: auto;
+}
+
+.ws-cloud-save-debug {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1400;
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(60vh, 520px);
+  background: #111827;
+  color: #f9fafb;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.ws-cloud-save-debug.is-success {
+  border-color: #059669;
+}
+
+.ws-cloud-save-debug.is-error {
+  border-color: #dc2626;
+}
+
+.ws-cloud-save-debug-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #1f2937;
+  border-bottom: 1px solid #374151;
+}
+
+.ws-cloud-save-debug-body {
+  margin: 0;
+  padding: 10px 12px;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
+  max-height: calc(min(60vh, 520px) - 42px);
+}
+
+.ws-cloud-save-debug-close {
+  padding: 2px 8px;
+  min-width: auto;
 }
 
 .ws-floating-timer-presets {
