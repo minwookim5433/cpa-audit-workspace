@@ -181,10 +181,26 @@ export async function renderSinglePage(
   return { isTextRich, viewport };
 }
 
-export async function detectPdfTextRich(pdfDoc, samplePages = 3) {
-  const n = Math.min(samplePages, pdfDoc.numPages);
-  for (let i = 1; i <= n; i++) {
-    const page = await pdfDoc.getPage(i);
+export async function detectPdfTextRich(pdfDoc, { samplePages = 3, includePages = [] } = {}) {
+  if (!pdfDoc?.numPages) return false;
+
+  const pagesToCheck = new Set();
+  for (const raw of includePages || []) {
+    const pageNum = Number(raw);
+    if (Number.isInteger(pageNum) && pageNum >= 1 && pageNum <= pdfDoc.numPages) {
+      pagesToCheck.add(pageNum);
+    }
+  }
+  for (let i = 1; i <= Math.min(samplePages, pdfDoc.numPages); i += 1) {
+    pagesToCheck.add(i);
+  }
+  if (pdfDoc.numPages > 3) {
+    pagesToCheck.add(Math.ceil(pdfDoc.numPages / 2));
+    pagesToCheck.add(pdfDoc.numPages);
+  }
+
+  for (const pageNum of pagesToCheck) {
+    const page = await pdfDoc.getPage(pageNum);
     const tc = await page.getTextContent();
     if (assessTextContent(tc).isTextRich) return true;
   }

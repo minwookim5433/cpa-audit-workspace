@@ -27,7 +27,9 @@ async function ensureWorkspace() {
   workspaceInitPromise = (async () => {
     if (!workspaceStarted) workspaceStarted = true;
     try {
-      const { initWorkspace } = await import("./workspace-app.js");
+      const buildId = document.querySelector('meta[name="app-build-id"]')?.content?.trim();
+      const moduleUrl = buildId ? `./workspace-app.js?v=${encodeURIComponent(buildId)}` : "./workspace-app.js";
+      const { initWorkspace } = await import(moduleUrl);
       await initWorkspace();
     } catch (err) {
       workspaceStarted = false;

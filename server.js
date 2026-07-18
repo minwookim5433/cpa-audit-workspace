@@ -96,21 +96,38 @@ app.get("/api/public-config", (_req, res) => {
 
 app.get("/", (_req, res) => {
   const indexPath = path.join(staticRoot, "index.html");
+  const buildTag = APP_BUILD_ID.slice(0, 12);
   let html = fs.readFileSync(indexPath, "utf8");
   html = html.replace(
     'src="workspace-main.js"',
-    `src="workspace-main.js?v=${encodeURIComponent(APP_BUILD_ID.slice(0, 12))}"`
+    `src="workspace-main.js?v=${encodeURIComponent(buildTag)}"`
   );
-  res.setHeader("Cache-Control", "no-cache");
+  html = html.replace(
+    "<head>",
+    `<head>\n  <meta name="app-build-id" content="${buildTag}">`
+  );
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   res.type("html").send(html);
 });
 
 const nodeModulesDir = path.join(__dirname, "node_modules");
-app.use("/node_modules", express.static(nodeModulesDir));
+app.use("/node_modules", express.static(nodeModulesDir, {
+  setHeaders(res, filePath) {
+    if (/\.mjs$/i.test(filePath)) {
+      res.setHeader("Content-Type", "application/javascript; charset=UTF-8");
+    }
+    if (/\.(m?js|css|html|map)$/i.test(filePath)) {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    }
+  },
+}));
 app.use(express.static(staticRoot, {
   setHeaders(res, filePath) {
-    if (/\.(js|css|html)$/i.test(filePath)) {
-      res.setHeader("Cache-Control", "no-cache");
+    if (/\.(m?js|css|html|map)$/i.test(filePath)) {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    }
+    if (/\.mjs$/i.test(filePath)) {
+      res.setHeader("Content-Type", "application/javascript; charset=UTF-8");
     }
   },
 }));

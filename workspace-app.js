@@ -1449,12 +1449,10 @@ async function renderExam() {
   );
   if (token !== renderToken) return;
 
-  if (state.isTextPdf === null && isTextRich) {
+  if (isTextRich) {
     state.isTextPdf = true;
-  }
-  const ws = getActiveWorkspace();
-  if (ws && ws.isTextPdf !== true && isTextRich) {
-    ws.isTextPdf = true;
+    const ws = getActiveWorkspace();
+    if (ws) ws.isTextPdf = true;
   }
 
   bindDrawController();
@@ -2079,7 +2077,7 @@ async function handlePdfUploadCore(file) {
   state.searchIdx = 0;
 
   try {
-    state.isTextPdf = await detectPdfTextRich(state.pdfDoc);
+    state.isTextPdf = await detectPdfTextRich(state.pdfDoc, { includePages: [state.currentPage] });
     ws.isTextPdf = state.isTextPdf;
     await waitForExamLayout();
     await applyExamViewportForCurrentPage();
@@ -2252,52 +2250,64 @@ async function runSearch(query, { source = "toolbar" } = {}) {
 
   showExamSearchNotice("검색 준비 중…");
 
-  if (state.isTextPdf !== true) {
-    state.isTextPdf = await detectPdfTextRich(state.pdfDoc);
-    if (ws) ws.isTextPdf = state.isTextPdf;
-    if (token !== searchRunToken) return;
-  }
-
-  if (state.isTextPdf === false) {
-    clearExamSearchResults({ rerender: false });
-    showExamSearchNotice("텍스트가 포함되지 않은 스캔 PDF는 검색할 수 없습니다.");
-    showStatus("텍스트가 포함되지 않은 스캔 PDF는 검색할 수 없습니다.", "warning");
-    return;
-  }
-
-  const cache = getPageTextCache(state.pdfFingerprint);
-  const totalPages = state.pageCount || state.pdfDoc.numPages || 0;
-  const { results, cancelled } = await searchPdfDocument(state.pdfDoc, state.searchQuery, {
-    cache,
-    onProgress: (current, total) => {
+  try {
+    if (state.isTextPdf !== true) {
+      state.isTextPdf = await detectPdfTextRich(state.pdfDoc, { includePages: [state.currentPage] });
+      if (ws) ws.isTextPdf = state.isTextPdf;
       if (token !== searchRunToken) return;
-      showExamSearchNotice(`검색 준비 중 ${current} / ${total}페이지`);
-    },
-    isCancelled: () => token !== searchRunToken,
-  });
+    }
 
-  if (token !== searchRunToken || cancelled) return;
+    const cache = getPageTextCache(state.pdfFingerprint);
+    const { results, cancelled, hadExtractableText } = await searchPdfDocument(state.pdfDoc, state.searchQuery, {
+      cache,
+      onProgress: (current, total) => {
+        if (token !== searchRunToken) return;
+        showExamSearchNotice(`검색 준비 중 ${current} / ${total}페이지`);
+      },
+      isCancelled: () => token !== searchRunToken,
+    });
 
-  state.searchResults = results;
-  state.searchIdx = 0;
-  restoreSearchHighlight();
-  if (ws) {
-    ws.searchResults = results;
-    ws.searchIdx = 0;
+    if (token !== searchRunToken || cancelled) return;
+
+    if (!hadExtractableText) {
+      state.isTextPdf = false;
+      if (ws) ws.isTextPdf = false;
+      clearExamSearchResults({ rerender: false });
+      showExamSearchNotice("텍스트가 포함되지 않은 스캔 PDF는 검색할 수 없습니다.");
+      showStatus("텍스트가 포함되지 않은 스캔 PDF는 검색할 수 없습니다.", "warning");
+      updateSearchNotice();
+      return;
+    }
+
+    state.isTextPdf = true;
+    if (ws) ws.isTextPdf = true;
+    updateSearchNotice();
+
+    state.searchResults = results;
+    state.searchIdx = 0;
+    restoreSearchHighlight();
+    if (ws) {
+      ws.searchResults = results;
+      ws.searchIdx = 0;
+    }
+
+    renderSearchResults(els.searchResults, state.searchResults, state.searchIdx, jumpToSearchResult);
+    updateExamSearchStatus();
+
+    if (!results.length) {
+      showExamSearchNotice("검색 결과가 없습니다.");
+      showStatus("검색 결과가 없습니다.", "info");
+      await renderExam();
+      return;
+    }
+
+    showExamSearchNotice("");
+    jumpToSearchResult(0);
+  } catch (err) {
+    console.error("[runSearch] failed:", err);
+    showExamSearchNotice("검색 중 오류가 발생했습니다.");
+    showStatus("검색 중 오류가 발생했습니다.", "error");
   }
-
-  renderSearchResults(els.searchResults, state.searchResults, state.searchIdx, jumpToSearchResult);
-  updateExamSearchStatus();
-
-  if (!results.length) {
-    showExamSearchNotice("검색 결과가 없습니다.");
-    showStatus("검색 결과가 없습니다.", "info");
-    await renderExam();
-    return;
-  }
-
-  showExamSearchNotice("");
-  jumpToSearchResult(0);
 }
 
 function jumpToSearchResult(idx) {
@@ -2537,8 +2547,8 @@ async function restoreSession() {
 
     if (state.pdfDoc) {
       state.pageCount = state.pdfDoc.numPages;
-      if (state.isTextPdf === null) {
-        state.isTextPdf = await detectPdfTextRich(state.pdfDoc);
+      if (state.isTextPdf !== true) {
+        state.isTextPdf = await detectPdfTextRich(state.pdfDoc, { includePages: [state.currentPage] });
         const ws = getActiveWorkspace();
         if (ws) ws.isTextPdf = state.isTextPdf;
       }

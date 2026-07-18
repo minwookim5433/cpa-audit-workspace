@@ -102,7 +102,9 @@ export function searchInPages(pageTexts, query) {
 
 export async function searchPdfDocument(pdfDoc, query, options = {}) {
   const q = String(query || "").trim();
-  if (!q || !pdfDoc?.numPages) return { results: [], scannedPages: 0 };
+  if (!q || !pdfDoc?.numPages) {
+    return { results: [], scannedPages: 0, cancelled: false, hadExtractableText: false };
+  }
 
   const {
     cache = new Map(),
@@ -113,10 +115,16 @@ export async function searchPdfDocument(pdfDoc, query, options = {}) {
 
   const results = [];
   const totalPages = pdfDoc.numPages;
+  let hadExtractableText = false;
 
   for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
     if (isCancelled()) {
-      return { results: [], scannedPages: pageNumber - 1, cancelled: true };
+      return {
+        results: [],
+        scannedPages: pageNumber - 1,
+        cancelled: true,
+        hadExtractableText,
+      };
     }
 
     onProgress?.(pageNumber, totalPages);
@@ -126,6 +134,11 @@ export async function searchPdfDocument(pdfDoc, query, options = {}) {
       const extracted = await extractPageText(pdfDoc, pageNumber);
       text = extracted.text;
       cache.set(pageNumber, text);
+      if (extracted.isTextRich || String(text || "").length > 0) {
+        hadExtractableText = true;
+      }
+    } else if (String(text || "").length > 0) {
+      hadExtractableText = true;
     }
 
     for (const match of findNormalizedMatches(text, q)) {
@@ -141,7 +154,7 @@ export async function searchPdfDocument(pdfDoc, query, options = {}) {
     }
   }
 
-  return { results, scannedPages: totalPages, cancelled: false };
+  return { results, scannedPages: totalPages, cancelled: false, hadExtractableText };
 }
 
 export function renderSearchResults(container, results, currentIdx, onJump) {
