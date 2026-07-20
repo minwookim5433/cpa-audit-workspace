@@ -268,59 +268,63 @@
         <div class="ws-split-pane" id="ws-split-pane">
           <section class="ws-pane ws-pane-exam is-active" id="ws-pane-exam">
             <div class="ws-header-exam-tools ws-exam-pane-toolbar" id="ws-header-exam-tools" hidden>
-              <button type="button" id="ws-prev-page" class="ws-btn ws-btn-fixed" disabled title="이전">◀</button>
-              <span class="ws-page-indicator">
-                <span id="ws-page-current" class="ws-page-current">1</span>
-                <span id="ws-page-label">/ —</span>
-              </span>
-              <button type="button" id="ws-next-page" class="ws-btn ws-btn-fixed" disabled title="다음">▶</button>
-              <span class="ws-toolbar-divider ws-toolbar-divider-inline" aria-hidden="true"></span>
-              <div class="ws-exam-search-bar" id="ws-exam-search-bar">
-                <input
-                  type="search"
-                  id="ws-exam-search-input"
-                  class="ws-exam-search-input"
-                  placeholder="검색어"
-                  aria-label="시험지 검색"
-                  autocomplete="off"
-                />
-                <button type="button" id="ws-exam-search-prev" class="ws-btn ws-btn-fixed" title="이전 결과">▲</button>
-                <button type="button" id="ws-exam-search-next" class="ws-btn ws-btn-fixed" title="다음 결과">▼</button>
-                <span id="ws-exam-search-status" class="ws-exam-search-status">0 / 0</span>
+              <div class="ws-exam-toolbar-row">
+                <button type="button" id="ws-prev-page" class="ws-btn ws-btn-fixed" disabled title="이전">◀</button>
+                <span class="ws-page-indicator">
+                  <span id="ws-page-current" class="ws-page-current">1</span>
+                  <span id="ws-page-label">/ —</span>
+                </span>
+                <button type="button" id="ws-next-page" class="ws-btn ws-btn-fixed" disabled title="다음">▶</button>
+                <span class="ws-toolbar-divider ws-toolbar-divider-inline" aria-hidden="true"></span>
+                <div class="ws-exam-search-bar" id="ws-exam-search-bar">
+                  <input
+                    type="search"
+                    id="ws-exam-search-input"
+                    class="ws-exam-search-input"
+                    placeholder="검색어"
+                    aria-label="시험지 검색"
+                    autocomplete="off"
+                  />
+                  <button type="button" id="ws-exam-search-prev" class="ws-btn ws-btn-fixed" title="이전 결과">▲</button>
+                  <button type="button" id="ws-exam-search-next" class="ws-btn ws-btn-fixed" title="다음 결과">▼</button>
+                  <span id="ws-exam-search-status" class="ws-exam-search-status">0 / 0</span>
+                </div>
+                <span id="ws-exam-search-notice" class="ws-exam-search-notice" hidden></span>
+                <span class="ws-toolbar-divider ws-toolbar-divider-inline" aria-hidden="true"></span>
+                <button type="button" id="ws-zoom-out" class="ws-btn ws-btn-fixed" title="축소">−</button>
+                <span id="ws-zoom-label" class="ws-zoom-label-fixed">100%</span>
+                <button type="button" id="ws-zoom-in" class="ws-btn ws-btn-fixed" title="확대">+</button>
+                <button type="button" id="ws-fit-width" class="ws-btn ws-btn-fit" title="너비 맞춤">맞춤</button>
               </div>
-              <span id="ws-exam-search-notice" class="ws-exam-search-notice" hidden></span>
-              <span class="ws-toolbar-divider ws-toolbar-divider-inline" aria-hidden="true"></span>
-              <button type="button" id="ws-zoom-out" class="ws-btn ws-btn-fixed" title="축소">−</button>
-              <span id="ws-zoom-label" class="ws-zoom-label-fixed">100%</span>
-              <button type="button" id="ws-zoom-in" class="ws-btn ws-btn-fixed" title="확대">+</button>
-              <button type="button" id="ws-fit-width" class="ws-btn ws-btn-fit" title="너비 맞춤">맞춤</button>
-              <button type="button" class="ws-exam-tool-btn ws-btn-fixed is-active" data-tool="view" title="커서">↖ 커서</button>
-              <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="underline" title="밑줄">밑줄</button>
-              <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="highlighter" title="형광펜">형광</button>
-              <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="pen" title="펜">펜</button>
-              <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="eraser" title="지우개">지우개</button>
-              <span id="ws-exam-color-wrap" class="ws-exam-color-wrap" hidden>
-                <select id="ws-exam-line-color" class="ws-tool-select" title="밑줄 색상">
-                  <option value="red">빨강</option>
-                  <option value="blue">파랑</option>
-                  <option value="black">검정</option>
-                </select>
-                <select id="ws-exam-highlight-color" class="ws-tool-select" title="형광펜 색" hidden>
-                  <option value="yellow">노랑</option>
-                  <option value="green">초록</option>
-                  <option value="pink">분홍</option>
-                </select>
-                <select id="ws-exam-pen-color" class="ws-tool-select" title="펜 색상" hidden>
-                  <option value="red">빨강</option>
-                  <option value="blue">파랑</option>
-                  <option value="black">검정</option>
-                </select>
-                <select id="ws-exam-pen-width" class="ws-tool-select" title="펜 굵기" hidden>
-                  <option value="thin">가늘게</option>
-                  <option value="normal">보통</option>
-                </select>
-              </span>
-              <button type="button" id="ws-annot-undo" class="ws-btn ws-btn-fixed" title="주석 실행 취소">↶</button>
+              <div class="ws-exam-toolbar-row ws-exam-toolbar-row-annot">
+                <button type="button" class="ws-exam-tool-btn ws-btn-fixed is-active" data-tool="view" title="커서">↖ 커서</button>
+                <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="underline" title="밑줄">밑줄</button>
+                <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="highlighter" title="형광펜">형광펜</button>
+                <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="pen" title="펜">펜</button>
+                <button type="button" class="ws-exam-tool-btn ws-btn-fixed" data-tool="eraser" title="지우개">지우개</button>
+                <span id="ws-exam-color-wrap" class="ws-exam-color-wrap" hidden>
+                  <select id="ws-exam-line-color" class="ws-tool-select" title="밑줄 색상">
+                    <option value="red">빨강</option>
+                    <option value="blue">파랑</option>
+                    <option value="black">검정</option>
+                  </select>
+                  <select id="ws-exam-highlight-color" class="ws-tool-select" title="형광펜 색" hidden>
+                    <option value="yellow">노랑</option>
+                    <option value="green">초록</option>
+                    <option value="pink">분홍</option>
+                  </select>
+                  <select id="ws-exam-pen-color" class="ws-tool-select" title="펜 색상" hidden>
+                    <option value="red">빨강</option>
+                    <option value="blue">파랑</option>
+                    <option value="black">검정</option>
+                  </select>
+                  <select id="ws-exam-pen-width" class="ws-tool-select" title="펜 굵기" hidden>
+                    <option value="thin">가늘게</option>
+                    <option value="normal">보통</option>
+                  </select>
+                </span>
+                <button type="button" id="ws-annot-undo" class="ws-btn ws-btn-fixed" title="주석 실행 취소">↶</button>
+              </div>
             </div>
             <div class="ws-pane-scroll ws-exam-scroll" id="ws-exam">
               <div id="ws-exam-pages" class="ws-exam-pages"></div>

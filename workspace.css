@@ -370,6 +370,14 @@ body {
 
 .ws-header-exam-tools {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ws-exam-toolbar-row {
+  display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
